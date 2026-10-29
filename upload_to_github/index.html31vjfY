@@ -1,0 +1,1563 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>田野工作台 · B09 照片檔案 (1992)</title>
+    <link rel="stylesheet" href="css/leaflet.css">
+    <link rel="stylesheet" href="css/MarkerCluster.css">
+    <link rel="stylesheet" href="css/MarkerCluster.Default.css">
+    <style>
+        :root {
+            /* 做舊羊皮紙配色：1992 檔案的紙感 */
+            --paper: #f0e9d6;
+            --card: #f8f3e5;
+            --card2: #f2ecdb;
+            --ink: #3a332a;
+            --muted: #8a7f68;
+            --line: #ddd2b8;
+            --accent: #a63d2f;       /* 硃紅 */
+            --accent-dark: #7e2e24;
+            --gold: #b8923f;
+            --serif: "Songti TC", "Noto Serif TC", "STSong", "SimSun", serif;
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; height: 100%;
+            font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+            color: var(--ink); background: var(--paper); }
+        /* 做舊質感：紙張顆粒只印在左右欄背景（不再用 fixed 疊層蓋住地圖——
+           mix-blend 合成層會跟地圖每幀動畫重繪，是縮放卡頓主因）；
+           邊緣泛黃暗角保留（單層漸層，合成成本低）。 */
+        body::after { content: ""; position: fixed; inset: 0; z-index: 9989;
+            pointer-events: none;
+            background: radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 58%, rgba(84,64,34,.14) 100%); }
+        .app { display: grid; height: 100vh;
+            /* 照片檔案欄加寬（370→500px），地圖相應縮窄：
+               地圖是探索 archive 的入口，點選後在寬欄裡閱讀照片與脈絡 */
+            grid-template-columns: 280px 1fr 500px;
+            grid-template-areas: "filters map detail"; }
+        /* 紙張顆粒：烘進欄位背景（SVG rect 不透明度≈.05×.7），地圖不受影響 */
+        .col-filters { grid-area: filters; overflow-y: auto; padding: 18px 16px 22px;
+            background-color: var(--card); background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix type='saturate' values='0'/></filter><rect width='160' height='160' filter='url(%23n)' opacity='0.035'/></svg>");
+            border-right: 1px solid var(--line);
+            position: relative; }
+        .col-map { grid-area: map; position: relative; }
+        .col-detail { grid-area: detail; overflow-y: auto; padding: 20px 24px 26px;
+            background-color: var(--paper); background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix type='saturate' values='0'/></filter><rect width='160' height='160' filter='url(%23n)' opacity='0.035'/></svg>");
+            border-left: 1px solid var(--line);
+            position: relative; }
+        /* ---- 毛邊（撕紙邊）：蓋在兩欄與地圖交界的不規則撕口 ----
+           SVG 鋸齒路徑 repeat-y，drop-shadow 沿透明邊緣產生撕口陰影 */
+        .col-filters::after, .col-detail::after {
+            content: ""; position: absolute; top: 0; bottom: 0; width: 14px;
+            pointer-events: none; z-index: 5;
+            background-size: 14px 130px; background-repeat: repeat-y;
+            filter: drop-shadow(0 0 4px rgba(80,62,34,.22)); }
+        .col-filters::after { right: -1px;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='130'><path d='M0,0 L0,130 L7,126 L3,119 L10,112 L4,104 L9,96 L3,88 L11,80 L4,72 L9,64 L3,55 L10,47 L5,38 L11,30 L4,22 L9,14 L3,7 L8,2 L6,0 Z' fill='%23f8f3e5'/></svg>"); }
+        .col-detail::after { left: -1px;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='130'><path d='M14,0 L14,130 L7,126 L10,119 L4,112 L11,104 L5,96 L9,88 L3,80 L10,72 L5,64 L11,55 L4,47 L9,38 L3,30 L10,22 L5,14 L11,7 L6,2 L8,0 Z' fill='%23f0e9d6'/></svg>"); }
+        #map { width: 100%; height: 100%; background: #ffffff; }
+        /* 航照大圖交給 GPU 合成，縮放平移更順 */
+        .leaflet-image-layer { will-change: transform; }
+        /* 地圖邊緣做舊：內陰影泛黃（在圖層控件與底片條之下） */
+        .col-map::after { content: ""; position: absolute; inset: 0; z-index: 890;
+            pointer-events: none;
+            box-shadow: inset 0 0 70px rgba(96,74,40,.20); }
+
+        /* ---- 捲軸 ---- */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d3c7a8; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #bfb292; }
+
+        /* ---- 左欄：品牌區 ---- */
+        .brand { padding: 6px 2px 14px; border-bottom: 2px solid var(--ink); margin-bottom: 14px; }
+        .brand-tag { font-size: 10px; letter-spacing: .14em; color: var(--accent);
+            text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+        h1 { font-family: var(--serif); font-size: 21px; margin: 0 0 5px; letter-spacing: .04em; }
+        .sub { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+
+        /* ---- 計數卡 ---- */
+        .count-box { background: linear-gradient(135deg, #faf5e6, #f3ecd7);
+            border: 1px solid #e0d5b8; border-left: 3px solid var(--gold);
+            border-radius: 8px; padding: 10px 12px; margin-bottom: 16px;
+            display: flex; align-items: baseline; justify-content: space-between; }
+        .count-box .c-lbl { font-size: 11px; color: var(--muted); letter-spacing: .05em; }
+        .count-box b { font-family: var(--serif); font-size: 22px; color: var(--accent); font-weight: 700; }
+        .count-box .c-sep { margin: 0 3px; color: #c2b694; font-size: 13px; }
+        .count-box #total { font-size: 13px; color: var(--muted); }
+        /* 0 筆時數字轉灰，一眼看出「目前沒有東西」而不是壞掉 */
+        .count-box b.zero { color: #c2b694; }
+
+        /* ---- 篩選群組 ---- */
+        .fgroup { margin-bottom: 18px; border-top: 1px solid var(--line); padding-top: 12px; }
+        .fgroup h3 { font-size: 11px; margin: 0 0 8px; color: var(--ink);
+            letter-spacing: .1em; font-weight: 700;
+            display: flex; align-items: center; gap: 6px; }
+        .fgroup h3 .step { display: inline-flex; align-items: center; justify-content: center;
+            width: 16px; height: 16px; border-radius: 50%; flex: none;
+            background: var(--accent); color: #fff; font-size: 9.5px;
+            font-weight: 700; letter-spacing: 0; font-family: -apple-system, sans-serif; }
+        .tagline { font-size: 11.5px; line-height: 1.65; color: #6e6752;
+            font-style: italic; margin: 0 0 14px; padding: 9px 11px;
+            background: #f6f0dd; border-left: 2px solid var(--accent);
+            border-radius: 0 6px 6px 0; }
+        .fgroup .fbtns { display: flex; gap: 6px; margin-bottom: 8px; }
+        button { font-size: 11px; padding: 3px 12px; border: 1px solid #c9bfa4; background: transparent;
+            color: #6e6752; border-radius: 99px; cursor: pointer; transition: all .15s; }
+        button:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .fopt { display: flex; align-items: flex-start; gap: 6px; font-size: 12px;
+            padding: 3px 6px; margin: 0 -6px; cursor: pointer; border-radius: 5px;
+            line-height: 1.45; transition: background .12s; }
+        .fopt:hover { background: #f1ebd8; }
+        .fopt input { margin: 2px 0 0; accent-color: var(--accent); flex: none; }
+        .fopt .n { color: #b0a78d; font-size: 10px; white-space: nowrap; }
+        .fnote { margin-top: 8px; padding: 9px 11px; background: #f0ead6;
+            border-left: 2px solid var(--gold); border-radius: 0 6px 6px 0;
+            font-size: 11px; line-height: 1.6; color: #77705e; }
+        .fnote b { color: #5c553f; font-weight: 600; }
+
+        /* ---- 快速操作（Show uncertain / Reset） ---- */
+        .quick-actions { display: flex; gap: 6px; align-items: center;
+            margin: 0 0 12px; flex-wrap: wrap; }
+        .quick-actions button { padding: 5px 13px; font-size: 11.5px; }
+        /* 激活態才上色：篩選未生效時是普通按鈕 */
+        .quick-actions button.on { background: var(--accent); border-color: var(--accent);
+            color: #fff; font-weight: 600; }
+        .quick-actions button.on:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+        #quickNote { display: none; font-size: 11px; line-height: 1.6; color: #77705e;
+            background: #f0ead6; border-left: 2px solid var(--accent);
+            border-radius: 0 6px 6px 0; padding: 8px 11px; margin: 0 0 12px; }
+        #quickNote.show { display: block; }
+
+        /* ---- 右欄詳情 ---- */
+        .detail-empty { color: #a49b83; font-size: 13px; text-align: center; margin: 70px 20px 0;
+            padding: 40px 16px; border: 1.5px dashed #d5ccb2; border-radius: 10px; line-height: 1.8; }
+        .d-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            margin-bottom: 4px; }
+        .d-title { font-family: var(--serif); font-weight: 700; font-size: 23px; letter-spacing: .03em; }
+        .badge { font-size: 10px; padding: 3px 9px; border-radius: 99px; font-weight: 600;
+            letter-spacing: .04em; white-space: nowrap; }
+        .b-exact    { background: #e4efe2; color: #3d6b3d; border: 1px solid #bcd8ba; }
+        .b-approx   { background: #faf0da; color: #8a6414; border: 1px solid #e6d3a1; }
+        .b-village  { background: #eee9dd; color: #7a7259; border: 1px solid #d8d0ba; }
+        .d-notes { font-size: 12px; color: var(--muted); margin: 2px 0 12px; line-height: 1.55; }
+        .d-photoWrap { margin: 0 0 14px; background: #fbf7ec; padding: 7px 7px 4px;
+            border: 1px solid var(--line); border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(70,55,30,.18); }
+        .d-photo { width: 100%; display: block; border-radius: 2px; background: #eee; }
+        .d-cap { font-size: 10px; color: #b0a78d; text-align: center; padding: 5px 0 3px;
+            letter-spacing: .08em; }
+        .d-table { width: 100%; background: var(--card); border: 1px solid var(--line);
+            border-radius: 8px; overflow: hidden; border-collapse: separate; border-spacing: 0; }
+        .d-row { display: flex; border-bottom: 1px solid #ece4cd; }
+        .d-row:last-child { border-bottom: none; }
+        .d-lbl { color: var(--muted); white-space: nowrap; width: 104px; flex: none;
+            font-size: 11px; padding: 8px 12px; background: #f5efdd;
+            border-right: 1px solid #ece4cd; }
+        .d-val { font-size: 12.5px; padding: 8px 12px; line-height: 1.6; flex: 1; min-width: 0; }
+        .d-val.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: #6b5f47; }
+        .d-missing { color: #b5ac94; }
+        .err { color: #b33; font-size: 13px; padding: 12px; }
+        .legend-note { font-size: 10.5px; color: #a49b83; margin-top: 14px; line-height: 1.7;
+            padding-top: 12px; border-top: 1px solid var(--line); }
+        .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 16px;
+            padding: 9px 11px; background: #efe8d2; border-radius: 6px; }
+        .legend span { font-size: 11px; color: #5c553f; display: flex; align-items: center; gap: 5px; }
+        .legend i { width: 10px; height: 10px; border-radius: 50%; flex: none;
+            border: 1px solid #232323; display: inline-block; }
+
+        /* ---- 自訂聚類圓（保留 marker-cluster 基底 class 供 markercluster 動畫運作） ----
+           統一配色：不分數量檔位，全部同款紙白；立體感靠徑向漸層＋內外陰影。 */
+        .marker-cluster.cl { background: transparent; border: none; }
+        .marker-cluster.cl span { display: flex; align-items: center; justify-content: center;
+            width: 100%; height: 100%; border-radius: 50%;
+            background: radial-gradient(circle at 32% 28%, #fffdf4 0%, #fbf3dd 48%, #eedcb4 100%);
+            border: 2px solid var(--accent);
+            color: var(--accent-dark); font-weight: 700; font-family: var(--serif);
+            box-shadow: 0 4px 10px rgba(70,40,20,.32),
+                        0 1px 3px rgba(70,40,20,.28),
+                        inset 0 -4px 7px rgba(166,61,47,.16),
+                        inset 0 2px 3px rgba(255,255,255,.95); }
+
+        /* ---- 散點：立體小徽章（蜘蛛展開時漂浮在聚類周圍、無連線） ---- */
+        .dot-wrap { background: transparent; border: none; }
+        .dot-badge { display: block; width: 16px; height: 16px; border-radius: 50%;
+            border: 1.5px solid rgba(35,35,35,.85);
+            box-shadow: 0 3px 7px rgba(70,40,20,.4),
+                        inset 0 -3px 5px rgba(0,0,0,.22),
+                        inset 0 2px 3px rgba(255,255,255,.55);
+            transition: transform .18s, box-shadow .18s; }
+        .dot-exact   { background: radial-gradient(circle at 32% 28%, #7ed46a, #33a02c 55%, #1f7a1d); }
+        .dot-approx  { background: radial-gradient(circle at 32% 28%, #fffb82, #fff400 55%, #d8cf00); }
+        .dot-village { background: radial-gradient(circle at 32% 28%, #ffd0d0, #fb9a99 55%, #e07776); }
+        .dot-other   { background: radial-gradient(circle at 32% 28%, #d8cfc0, #9a917c 55%, #7a705c); }
+        /* hover 回饋：聚類徽章與散點懸停輕微放大，讓「可以按」看得見 */
+        .marker-cluster.cl span { transition: transform .18s; }
+        .marker-cluster.cl:hover span { transform: scale(1.1); }
+        .dot-wrap:hover .dot-badge { transform: scale(1.3);
+            box-shadow: 0 4px 9px rgba(70,40,20,.5),
+                        inset 0 -3px 5px rgba(0,0,0,.22),
+                        inset 0 2px 3px rgba(255,255,255,.55); }
+        /* 選中：金色球體＋白圈，跟聚類徽章同一套立體語彙 */
+        .dot-wrap.hi { z-index: 9999; }
+        .dot-wrap.hi .dot-badge { transform: scale(1.5);
+            background: radial-gradient(circle at 32% 28%, #ffe9a8, #e8b64c 55%, #c19130);
+            border-color: rgba(255,255,255,.95);
+            box-shadow: 0 0 0 2.5px #fff, 0 5px 10px rgba(70,40,20,.45); }
+
+        /* ---- Lightbox 點擊放大 ---- */
+        .d-photoWrap { cursor: zoom-in; transition: transform .2s, box-shadow .2s; }
+        .d-photoWrap:hover { transform: translateY(-2px);
+            box-shadow: 0 8px 22px rgba(70,55,30,.26); }
+        .lightbox { position: fixed; inset: 0; z-index: 99999; display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+            padding: 24px; background: rgba(24, 19, 12, .78);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            cursor: zoom-out; opacity: 0; transition: opacity .2s; }
+        .lightbox.open { display: flex; opacity: 1; }
+        .lightbox img { max-width: 92vw; max-height: 80vh; display: block;
+            background: #fff; padding: 6px; border-radius: 3px;
+            box-shadow: 0 16px 60px rgba(0,0,0,.55); }
+        .lb-cap { margin-top: 16px; color: #f5efe0; font-size: 14px;
+            letter-spacing: .04em; text-align: center; line-height: 1.6;
+            text-shadow: 0 1px 6px rgba(0,0,0,.65); }
+        .lb-cap b { color: #e8b64c; font-weight: 700; margin-right: 8px; }
+        .lb-hint { margin-top: 10px; color: rgba(245,239,224,.55); font-size: 11px;
+            letter-spacing: .08em; }
+        .lb-hint #lbPos { color: #e8b64c; margin-right: 6px; }
+
+        /* ---- 搜尋框 ---- */
+        .search-box { position: relative; margin-bottom: 14px; }
+        .search-box input { width: 100%; font-size: 12px; padding: 8px 12px 8px 30px;
+            border: 1px solid #c9bfa4; border-radius: 99px; background: #fdfaf0;
+            color: var(--ink); outline: none; font-family: inherit;
+            transition: border-color .15s, box-shadow .15s; }
+        .search-box input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(166,61,47,.12); }
+        .search-box input::placeholder { color: #b0a78d; }
+        .search-box::before { content: "⌕"; position: absolute; left: 11px; top: 50%;
+            transform: translateY(-50%); font-size: 14px; color: #a49b83; pointer-events: none; }
+
+        /* ---- 底片條 ---- */
+        #filmstrip { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 900;
+            display: flex; gap: 6px; overflow-x: auto; padding: 8px 10px;
+            background: rgba(250, 246, 234, .94); border: 1px solid var(--line);
+            border-radius: 10px; box-shadow: 0 4px 16px rgba(70,55,30,.2); }
+        #filmstrip img { height: 52px; border-radius: 4px; cursor: pointer; flex: none;
+            border: 2px solid transparent; opacity: .85; transition: all .12s; display: block; }
+        #filmstrip img:hover { opacity: 1; transform: translateY(-2px); }
+        #filmstrip img.active { border-color: var(--gold); opacity: 1; }
+        #filmstrip:empty { display: none; }
+        #filmstrip .fs-empty { font-size: 11px; color: #a49b83; align-self: center;
+            padding: 0 8px; white-space: nowrap; letter-spacing: .04em; }
+
+        /* ---- Lightbox 導覽鈕 ---- */
+        .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+            width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+            border: none; background: rgba(255,253,247,.14); color: #f5efe0;
+            font-size: 24px; line-height: 1; display: flex; align-items: center;
+            justify-content: center; transition: background .15s; }
+        .lb-nav:hover { background: rgba(255,253,247,.32); }
+        .lb-prev { left: 18px; }
+        .lb-next { right: 18px; }
+
+        /* ================= 工作台入口頁（合併自 workbench.html） ================= */
+        #workbench { position: fixed; inset: 0; z-index: 10000; background: #14181f; overflow: hidden; }
+        #workbench.hidden { display: none; }
+        /* 板塊 hover 放大效果：滑鼠移上去該板塊輕微放大（牆面地板不動） */
+        #workbench .scene { position: absolute; inset: 0; overflow: hidden; }
+        #workbench .scene svg { width: 100%; height: 100%; display: block; }
+        #workbench .fx { transform-box: fill-box; transform-origin: 50% 50%;
+            transition: transform .35s cubic-bezier(.2,.8,.3,1.15);
+            will-change: transform; }
+        #workbench .fx:hover { transform: scale(1.05); }
+        /* 書桌面積大，放大幅度小一點 */
+        #workbench #deskHotspot.fx:hover { transform: scale(1.02); }
+        #workbench .desk-hotspot { cursor: pointer; }
+        #workbench .desk-hotspot:hover .desk-top { fill: #8a6746; }
+        #workbench .desk-hotspot:active { filter: brightness(1.07); }
+        #workbench .glow { animation: flicker 5s ease-in-out infinite; }
+        @keyframes flicker { 0%,100% { opacity: .85; } 45% { opacity: 1; } 60% { opacity: .78; } }
+        #workbench #hint { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%);
+            color: rgba(240,232,210,.85); font-size: 14px; letter-spacing: .18em;
+            text-shadow: 0 2px 8px rgba(0,0,0,.8); animation: bob 2.4s ease-in-out infinite;
+            pointer-events: none; z-index: 5; }
+        @keyframes bob { 0%,100% { transform: translateX(-50%) translateY(0); opacity: .8; }
+            50% { transform: translateX(-50%) translateY(-6px); opacity: 1; } }
+        #workbench .tree-poster { cursor: default; transition: filter .3s; }
+        #workbench .tree-poster:hover { filter: brightness(1.12); }
+        #workbench #bookWrap { position: fixed; inset: 0; z-index: 20; display: none;
+            align-items: center; justify-content: center;
+            background: rgba(8, 10, 15, .82);
+            backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+        #workbench #bookWrap.open { display: flex; }
+        #workbench .book-stage { position: relative;
+            /* 書本跟隨滑鼠傾斜（由 JS 寫入 --bry/--brx） */
+            transform: scale(var(--bs, 1)) rotateX(var(--brx, 0deg)) rotateY(var(--bry, 0deg));
+            transform-style: preserve-3d; will-change: transform; }
+        #workbench #bookWrap.open .book-stage { animation: bookIn .5s cubic-bezier(.2,.85,.3,1.15); }
+        @keyframes bookIn {
+            from { transform: scale(calc(var(--bs, 1) * .88)) rotateX(10deg) rotateY(0deg); opacity: 0; }
+            to   { opacity: 1; } }
+        #workbench #book { position: relative; width: 680px; height: 460px;
+            transform-style: preserve-3d; perspective: 2200px; }
+        #workbench #book::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 50%;
+            background: linear-gradient(150deg, #3a2a1b, #2b1f12);
+            border-radius: 12px 4px 4px 12px; border: 1px solid #241a10;
+            box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+        #workbench .sheet { position: absolute; top: 0; bottom: 0; left: 50%; width: 50%;
+            transform-origin: left center; transform-style: preserve-3d;
+            transition: transform 1s cubic-bezier(.35,.1,.2,1); }
+        #workbench .sheet.flipped { transform: rotateY(-180deg); }
+        #workbench .face { position: absolute; inset: 0; backface-visibility: hidden;
+            -webkit-backface-visibility: hidden; border-radius: 4px 12px 12px 4px;
+            overflow: hidden;
+            /* 部分引擎不支援 backface-visibility，兩面可見度另由 JS 依翻頁狀態切換 */
+            transition: opacity 1s cubic-bezier(.35,.1,.2,1), visibility 1s; }
+        #workbench .face.back { transform: rotateY(180deg); border-radius: 12px 4px 4px 12px; }
+        #workbench .cover { background: linear-gradient(150deg, #4a3524, #2f2214);
+            border: 1px solid #241a10; box-shadow: 0 24px 60px rgba(0,0,0,.6);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: #d9b96a; }
+        #workbench .cover::before { content: ""; position: absolute; inset: 16px;
+            border: 2px solid rgba(217,185,106,.5); border-radius: 3px 9px 9px 3px; }
+        #workbench .cover .emboss { font-family: var(--serif); font-size: 34px; letter-spacing: .3em;
+            text-indent: .3em; font-weight: 700;
+            text-shadow: 0 1px 0 rgba(0,0,0,.6), 0 -1px 0 rgba(255,255,255,.08); }
+        #workbench .cover .sub { margin-top: 14px; font-size: 12px; letter-spacing: .4em; text-indent: .4em;
+            color: #a58a4e; }
+        #workbench .cover .open-tip { margin-top: 46px; font-size: 12px; color: #8d7440;
+            animation: bob 2s ease-in-out infinite; }
+        #workbench .paper { background: linear-gradient(120deg, #f4ecd8, #ece1c6);
+            color: #4c4230; box-shadow: 0 24px 60px rgba(0,0,0,.6); padding: 22px 22px; }
+        #workbench .paper h3 { font-family: var(--serif); font-size: 16px;
+            letter-spacing: .2em; margin-bottom: 14px; color: #5c4a2e;
+            border-bottom: 1px solid #cbb98d; padding-bottom: 8px; }
+        #workbench .paper p { font-size: 12px; line-height: 1.85; color: #6b5d42; }
+        #workbench .paper .note { margin-top: 12px; font-size: 11px; color: #99865e; font-style: italic; }
+        #workbench .folders { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+        #workbench .folder { cursor: pointer; position: relative;
+            transition: transform .18s cubic-bezier(.2,.8,.3,1.25); }
+        #workbench .folder:hover { transform: translateY(-3px); }
+        #workbench .folder:active { transform: translateY(-1px) scale(.985); }
+        #workbench .folder .ftab { position: absolute; top: -11px; left: 14px; background: #c9a86a;
+            color: #5c4a2e; font-size: 10.5px; font-weight: 700; padding: 3px 10px 2px;
+            border-radius: 5px 5px 0 0; letter-spacing: .04em;
+            box-shadow: 0 -1px 3px rgba(0,0,0,.15); }
+        #workbench .folder .fbody { background: linear-gradient(160deg, #d9bd85, #c7a767);
+            border-radius: 3px 6px 6px 6px; padding: 12px 14px; min-height: 64px;
+            box-shadow: 0 6px 14px rgba(60,40,10,.25), inset 0 0 0 1px rgba(255,255,255,.25);
+            display: flex; align-items: center; gap: 10px; }
+        #workbench .folder .flabel { font-size: 13px; font-weight: 700; color: #5c4a2e; line-height: 1.45; }
+        #workbench .folder .flabel small { display: block; font-weight: 400; font-size: 10px;
+            color: #8a744c; margin-top: 3px; letter-spacing: .02em; }
+        #workbench .folder .stamp { margin-left: auto; flex: none; font-size: 10px; padding: 3px 10px;
+            border-radius: 99px; letter-spacing: .06em; white-space: nowrap; }
+        #workbench .folder.locked .fbody { filter: saturate(.45) brightness(.94); }
+        #workbench .folder.locked .stamp { background: #6d6555; color: #e8e2d2; }
+        #workbench .folder.locked .ftab { background: #b09a72; color: #6d5c3d; }
+        #workbench .folder.open-able .stamp { background: var(--accent); color: #fff; font-weight: 700;
+            animation: pulse 1.8s ease-in-out infinite; }
+        #workbench .folder.open-able .ftab { background: var(--accent); color: #f5e8c8; }
+        @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(166,61,47,.5); }
+            50% { box-shadow: 0 0 0 6px rgba(166,61,47,0); } }
+        #workbench .folder.shake { animation: shake .4s; }
+        @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); }
+            50% { transform: translateX(5px); } 75% { transform: translateX(-3px); } }
+        /* 書脊陰影：貼齊書本中縫（正面紙在左緣、翻面後背面紙的書脊在右緣），
+           舊版 left:50% 會讓陰影跑到每頁正中間，看起來像一條黑線橫穿檔案夾 */
+        #workbench .gutter { position: absolute; top: 0; bottom: 0; width: 34px;
+            pointer-events: none; }
+        #workbench .face:not(.back) .gutter {
+            left: 0; background: linear-gradient(90deg, rgba(50,38,18,.22), rgba(0,0,0,0)); }
+        #workbench .face.back .gutter {
+            right: 0; background: linear-gradient(270deg, rgba(50,38,18,.22), rgba(0,0,0,0)); }
+        #workbench .book-nav { margin-top: 18px; display: flex; align-items: center;
+            justify-content: center; gap: 14px; }
+        #workbench .book-nav button { width: 38px; height: 38px; padding: 0; border-radius: 50%;
+            border: 1px solid #5c4a2e; background: rgba(244,236,216,.1); color: #d9b96a;
+            font-size: 18px; cursor: pointer; transition: transform .12s, background .15s, color .15s; }
+        #workbench .book-nav button:active { transform: scale(.85); }
+        #workbench .book-nav button:hover { background: rgba(244,236,216,.1);
+            border-color: #5c4a2e; color: #d9b96a; }
+        #workbench .book-nav button:disabled { opacity: .25; cursor: default; }
+        #workbench .book-nav span { color: #a58a4e; font-size: 12px; letter-spacing: .1em; }
+        #workbench #bookClose { position: fixed; top: 22px; right: 26px; z-index: 30; width: 40px;
+            height: 40px; padding: 0; border-radius: 50%; border: 1px solid rgba(217,185,106,.4);
+            background: transparent; color: #d9b96a; font-size: 17px; cursor: pointer; }
+        #workbench #bookClose:hover { background: rgba(217,185,106,.15);
+            border-color: rgba(217,185,106,.4); color: #d9b96a; }
+        #workbench #toast { position: fixed; left: 50%; bottom: 46px;
+            transform: translateX(-50%) translateY(20px);
+            background: rgba(30,26,18,.92); color: #e8dfc8; font-size: 12.5px; letter-spacing: .06em;
+            padding: 9px 18px; border-radius: 99px; border: 1px solid rgba(217,185,106,.35);
+            opacity: 0; pointer-events: none; transition: all .25s; z-index: 40; }
+        #workbench #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        #workbench #wbFade { position: fixed; inset: 0; background: #000; opacity: 0;
+            pointer-events: none; transition: opacity .7s; z-index: 50; }
+        #workbench #wbFade.on { opacity: 1; pointer-events: all; }
+
+        /* ---- Leaflet 控制項（做舊紙感） ---- */
+        .leaflet-control-layers { max-height: 70vh; overflow-y: auto;
+            border-radius: 8px !important; box-shadow: 0 3px 12px rgba(70,55,30,.25) !important;
+            font-size: 12px; border: 1px solid var(--line) !important;
+            background: var(--card); color: #5a5240; }
+        .leaflet-control-layers-expanded { background: var(--card); color: #5a5240; }
+        .leaflet-bar a { border-radius: 0 !important;
+            background: var(--card) !important; color: #8a6a3a !important;
+            border-bottom: 1px solid var(--line) !important; }
+        .leaflet-bar a:hover { background: var(--card2) !important; }
+        .leaflet-control-attribution { background: rgba(248,243,229,.85) !important;
+            color: #9a8f74 !important; font-size: 9.5px !important; }
+        .leaflet-control-attribution a { color: var(--accent) !important; }
+        /* 圖層面板改為純點擊開合（Leaflet 預設 hover 展開/滑走收合+圖示消失，容易讓人以為按鈕壞掉） */
+        .leaflet-control-layers .leaflet-control-layers-list { display: none; }
+        .leaflet-control-layers.layers-open .leaflet-control-layers-list { display: block; }
+        .leaflet-control-layers-expanded .leaflet-control-layers-toggle { display: block; }
+        .leaflet-bar a { border-radius: 0 !important; }
+        .leaflet-container { font-family: inherit; }
+        /* 返回工作台 */
+        #backHome { position: absolute; top: 10px; left: 52px; z-index: 1100;
+            width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+            background: var(--card); border: 1px solid var(--line); border-radius: 4px;
+            color: var(--accent); font-size: 15px; text-decoration: none; cursor: pointer;
+            box-shadow: 0 1px 5px rgba(50,40,20,.25); transition: background .15s; }
+        #backHome:hover { background: var(--accent); color: #fff; }
+        /* 地圖入口提示：地圖是探索檔案的入口，點選後在右欄閱讀照片 */
+        #mapHint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            z-index: 900; pointer-events: none; white-space: nowrap;
+            background: rgba(250,246,234,.94); border: 1px solid var(--line);
+            border-radius: 99px; padding: 6px 16px;
+            font-size: 11.5px; color: #6e6752; letter-spacing: .06em;
+            box-shadow: 0 2px 10px rgba(70,55,30,.18); }
+        #mapHint b { color: var(--accent); font-weight: 700; }
+        /* 選中第一張照片後提示自動淡出（任務已完成，讓出畫面） */
+        #mapHint { transition: opacity .9s; }
+        #mapHint.gone { opacity: 0; }
+
+        /* ---- 窄桌面：照片欄略收，避免地圖被擠得太小 ---- */
+        @media (max-width: 1340px) and (min-width: 1101px) {
+            .app { grid-template-columns: 250px 1fr 440px; }
+            .col-detail { padding: 18px 20px 24px; }
+        }
+        /* ---- 平板 ---- */
+        @media (max-width: 1100px) {
+            .app { grid-template-columns: 240px 1fr; grid-template-rows: 1fr 320px;
+                grid-template-areas: "filters map" "detail detail"; }
+            .col-detail { border-left: none; border-top: 1px solid var(--line); }
+            /* 版式改為上下疊時，撕紙邊方向不對，隱藏 */
+            .col-detail::after { display: none; }
+        }
+        /* ---- 手機 ---- */
+        @media (max-width: 700px) {
+            .app { display: flex; flex-direction: column; height: auto; min-height: 100vh; }
+            .col-filters { order: 2; border-right: none; border-top: 1px solid var(--line); max-height: none; }
+            .col-map { order: 1; height: 55vh; }
+            .col-detail { order: 3; border-top: 1px solid var(--line); }
+            /* 手機上地圖小，入口提示膠囊只佔位不提供資訊，隱藏 */
+            #mapHint { display: none; }
+        }
+    </style>
+<script id="csv-embed" type="text/plain">
+照片流水號,box no.,照片總編號,指攝日期,底片編號,notes,拍攝者,經手人,整理日期,photo_subject,place_name,shoot_lat,shoot_lng,subject_lat,subject_lng,location_precision,location_source,location_note,place/subject_information,Photo_Path
+P01,B09,B09P01,Feb-92,9-8,棚屋（馬灣涌橋頭）,張振江,王羽彤,28-Aug-26,stilt house (棚屋),馬灣涌 (Ma Wan Chung),22.2845,113.9366,22.28570479,113.9352161,Approximate,Google Maps,"馬灣涌位於大嶼山東涌西部（村中心約 22.2848, 113.9355）。照片為橋頭一帶棚屋與海邊。1992 年棚屋多已改建或不存，無法精確到單棟，定位至馬灣涌橋頭範圍。",照片中可見馬灣涌橋頭一帶沿岸的棚屋群，以木樁支撐臨水而建，前方為潮退時露出的泥灘，背景為村後林木茂密的山丘。此景與1990年代初馬灣涌漁村臨海棚屋的面貌一致；今日該處棚屋多已改建或拆卸。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P01.jpg'
+P02,B09,B09P02,Feb-92,9-10,漁船（馬灣涌橋頭）,張振江,王羽彤,28-Aug-26,fishing boat (漁船),馬灣涌 (Ma Wan Chung),22.2845,113.9366,22.28570479,113.9352161,Approximate,Google Maps,橋頭水域的漁船；船隻非固定停泊，拍攝與被攝點均約在橋頭海邊，定位至橋頭範圍。,照片中為馬灣涌橋頭泊靠的漁船，船上設綠色篷蓋，周邊堆滿纜繩與船上器具，顯示漁民以船為生的作業情況。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P02.jpg'
+P03,B09,B09P03,Feb-92,9-11,漁排（馬灣涌橋頭）,張振江,王羽彤,28-Aug-26,fish raft / fish farm (魚排),馬灣涌 (Ma Wan Chung),22.2845,113.9366,22.28570479,113.9352161,Approximate,Google Maps,橋頭所見的魚排（海上養魚設施）。魚排為浮動設施且位置可變，拍攝點在橋頭岸邊，被攝的魚排約在東涌灣海面，定位至海灣範圍。,照片自橋頭望向海面，可見岸邊的綠色棚寮與泊船，水面遠處有山影；按註記所攝為橋頭外的魚排（海上養魚浮台）方向，該類浮動設施位置隨時變動，今多已不存。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P03.jpg'
+P04,B09,B09P04,Feb-92,9-12,棚屋（馬灣涌橋頭）,張振江,王羽彤,28-Aug-26,stilt house (棚屋),馬灣涌 (Ma Wan Chung),22.2845,113.9366,22.28570479,113.9352161,Approximate,Google Maps,橋頭一帶棚屋與泊船；1992 年棚屋多已改建，定位至橋頭範圍。,照片前景可見一座混凝土橋（即馬灣涌村橋），橋外沿岸泊滿漁船與棚屋，背景為村舍與山丘。該橋即今日馬灣涌村仍存、橋下為紅樹林水道的那一條橋。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P04.jpg'
+P05,B09,B09P05,Feb-92,9-13,樓房,張振江,王羽彤,28-Aug-26,multi-story building (樓房),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28519148,113.935292,Village-level,Google Maps,馬灣涌村內的樓房（多層村屋）。筆記未標示具體位置，無法確認是哪一座，定位至馬灣涌村範圍。右側樓有字「冠華樓」，但無法在網上搜索到任何信息，不確定現在是否還存在。,照片中為馬灣涌村臨水而建的多層混凝土樓房（約三至五層，窗戶與露台成列），屬村內較大型的永久建築，背景為山丘；並非高層公共屋邨，與1990年代初村內樓房面貌一致。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P05.jpg'
+P06,B09,B09P06,Feb-92,9-14,門神 馬灣涌11號,張振江,王羽彤,28-Aug-26,door-god plaque (門神),馬灣涌 涌口街11號 (Yung Hau St No.11),22.283968,113.935662,22.28551412,113.9353403,Approximate,Google Maps,馬灣涌涌口街 11 號門神（門上彩繪神像）。涌口街位置可於地圖確認，但 1992 年的門牌編號與現況未必對應，定位至涌口街範圍。,照片為涌口街11號（按註記）的門口特寫：木製雙門上貼有紅色門神紙，門側牆身髹湖水綠色，記錄傳統漁村民居入口貼門神的習俗。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P06.jpg'
+P07,B09,B09P07,Feb-92,9-15,神位 馬灣涌10號,張振江,王羽彤,28-Aug-26,ancestral tablet (神位),馬灣涌 涌口街10號 (Yung Hau St No.10),22.283968,113.935662,22.28551412,113.9353403,Approximate,Google Maps,涌口街 10 號的神位（祖先牌位）。街名可確認，個別門牌與 1992 年未必對應，定位至涌口街範圍。,照片為涌口街10號（按註記）屋內的神位：設祖先／神明牌位，懸掛紅色燈籠與紅色對聯飾物，牆身為藍綠色，反映漁戶家中的祭祀空間。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P07.jpg'
+P08,B09,B09P08,Feb-92,9-16,還神（馬灣涌9號）,張振江,王羽彤,28-Aug-26,ritual / 'returning the god' (還神),馬灣涌 涌口街9號 (Yung Hau St No.9),22.283968,113.935662,22.28551412,113.9353403,Approximate,Google Maps,涌口街 9 號的還神儀式（民間酬神活動）。街名可確認，門牌與 1992 年未必對應，定位至涌口街範圍。,照片為涌口街9號（按註記）門外海旁的還神場面：混凝土岸邊擺放祭品、盆栽與容器等儀式佈置，記錄漁民酬神還願的習俗。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P08.jpg'
+P09,B09,B09P09,Feb-92,9-17,漁船（馬灣涌碼頭）,張振江,王羽彤,28-Aug-26,fishing boat (漁船),馬灣涌 (Ma Wan Chung),22.2848,113.9373,22.28630032,113.9343998,Approximate,Google Maps,馬灣涌碼頭（東涌舊碼頭）一帶的漁船。碼頭現仍存在（2022–25 重建），但 1992 年確切泊位不可考，定位至碼頭水域範圍。,照片中為馬灣涌碼頭旁泊靠的漁船，其中一艘藍色船身上可見船牌編號（約為T143296），背景為村內三至四層高的白色村屋及登岸石級。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P09.jpg'
+P10,B09,B09P10,Feb-92,9-18,簡單機器（馬灣涌橋頭）,張振江,王羽彤,28-Aug-26,machinery / equipment (簡單機器),馬灣涌 (Ma Wan Chung),22.2845,113.9366,22.28570479,113.9352161,Approximate,Google Maps,橋頭的簡單機器（疑為抽水／起網等岸上設備）。定位至橋頭範圍。,照片中為馬灣涌橋頭岸上的簡單機器，似為小型電動泵或機械裝置，旁置紅色水盆與膠喉，應為漁民日常作業（如抽水、清洗）所用的岸上設備。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P10.jpg'
+P11,B09,B09P11,Feb-92,9019,漁船,張振江,王羽彤,28-Aug-26,fishing boat (漁船),馬灣涌 (Ma Wan Chung),22.2848,113.9373,22.28570479,113.9352161,Village-level,Google Maps,馬灣涌水域的漁船；筆記未標示具體位置，定位至馬灣涌村／碼頭水域範圍。,照片自一艘漁船甲板拍攝，可見綠色篷蓋船艙、藍色膠箱與床墊等船上生活用品，前方為其他泊靠漁船與岸邊棚架，反映漁民的船居生活。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P11.jpg'
+P12,B09,B09P12,Feb-92,11-3,漁船（馬灣涌橋邊）,張振江,王羽彤,28-Aug-26,fishing boat (漁船),馬灣涌 (Ma Wan Chung),22.2845,113.9366,22.28570479,113.9352161,Approximate,Google Maps,馬灣涌橋邊的漁船（遠方山邊可見興建中的機場起重機，即 1992 年赤鱲角機場工程）。定位至橋邊範圍。,照片自馬灣涌橋邊的漁船甲板向外拍攝，前景為篷蓋船艙與船上雜物，遠處可見沿岸棚屋、構築物與低矮山丘。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P12.jpg'
+P13,B09,B09P13,1992,12-22,漁民村,張振江,王羽彤,28-Aug-26,fishing village (漁民村),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28570479,113.9352161,Village-level,Google Maps,馬灣涌漁民村全景；定位至馬灣涌村範圍。,照片為馬灣涌漁民村沿岸全景：潮退的泥灘上泊有小艇，沿岸一排村屋與棚屋，背後為林木茂密的山丘，呈現1990年代初漁村的整體面貌。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P13.jpg'
+P14,B09,B09P14,1992,12-23,漁民棚屋（馬灣涌）,張振江,王羽彤,28-Aug-26,fishermen's stilt house (漁民棚屋),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28630032,113.9343998,Village-level,Google Maps,馬灣涌的漁民棚屋；未標示具體位置，定位至村範圍。,照片中為馬灣涌沿岸的漁民棚屋，其中一間髹藍色、以木樁架於水上，岸邊泥灘泊有小艇，顯示棚屋依潮間帶而建的特色。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P14.jpg'
+P15,B09,B09P15,1992,12-24,小型漁船（馬灣涌碼頭）,張振江,王羽彤,28-Aug-26,small fishing boat (小型漁船),馬灣涌 (Ma Wan Chung),22.2848,113.9373,22.28630032,113.9343998,Approximate,Google Maps,馬灣涌碼頭（東涌舊碼頭）一帶的小型漁船。碼頭現仍存在（2022–25重建），但1992年確切泊位不可考，定位至碼頭水域範圍（Approximate）。,照片中為馬灣涌碼頭旁泊靠的兩艘小型木造漁船，船身髹深色並設綠色篷蓋，船身可見白色船牌編號；後方另有一艘較大型、白綠相間的漁船，遠處為山影，水面呈灰綠色。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P15.jpg'
+P16,B09,B09P16,1992,12-25,遊艇,張振江,王羽彤,28-Aug-26,yacht (遊艇),馬灣涌 / 東涌灣 (Tung Chung Bay),22.2848,113.9373,22.28570479,113.9352161,Village-level,Google Maps,馬灣涌／東涌灣水域的遊艇；船隻流動且筆記未標位置，定位至馬灣涌水域範圍。,照片中為水面上聚集的多艘船隻，其中一艘掛有黃色旗幟；按註記當中包括遊艇，顯示馬灣涌水域除漁船外亦有遊樂船隻停泊。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P16.jpg'
+P17,B09,B09P17,1992,12-26,魚排（馬灣涌碼頭),張振江,王羽彤,28-Aug-26,fish raft (魚排),馬灣涌 (Ma Wan Chung),22.2848,113.9373,22.28630032,113.9343998,Approximate,Google Maps,由碼頭望向東涌灣的魚排與海岸聚落（遠景）。魚排為浮動設施，定位至灣內海面範圍。,照片自馬灣涌碼頭遠望東涌灣：對岸沿岸可見一長排臨水構築物與聚落，背靠大山；按註記所攝為魚排（海上養魚浮台）一帶方向。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P17.jpg'
+P18,B09,B09P18,1992,12-27,漁民棚屋（馬灣涌碼頭）,張振江,王羽彤,28-Aug-26,fishermen's stilt house (漁民棚屋),馬灣涌 (Ma Wan Chung),22.2848,113.9373,22.28630032,113.9343998,Approximate,Google Maps,碼頭一帶的漁民棚屋與泊船；定位至碼頭水域範圍。,照片中為碼頭一帶沿岸的漁民棚屋群，大量漁船沿岸繫泊，棚屋與村屋夾雜，背後為綠色山坡，呈現碼頭旁的漁村景象。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P18.jpg'
+P19,B09,B09P19,1992,16-18,漁家活動（一）,張振江,王羽彤,28-Aug-26,fishing-family activity (漁家活動),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁家活動（一），船／岸邊工作場景；未標位置，定位至馬灣涌村範圍。,照片為漁家船上／水邊的工作場景：可見篷布、木桿與船上器具，並有紅色裝飾（似為節慶或祭祀佈置），似自船艙或棚屋內向外拍攝。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P19.jpg'
+P20,B09,B09P20,1992,16-19,漁家活動（二）,張振江,王羽彤,28-Aug-26,fishing-family activity (漁家活動),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁家活動（二），馬灣涌海邊與棚屋全景；定位至村範圍。,照片中為架於水上的木板棧道，一名村民正行走其上，兩旁繫泊漁船，背景為棚屋與村舍，顯示棧道作為漁民往來水上棚屋的日常通道。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P20.jpg'
+P21,B09,B09P21,1992,16-20,漁家活動（三）,張振江,王羽彤,28-Aug-26,fishing-family activity (漁家活動),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁家活動（三），岸邊疊放的小艇與船內作業；定位至村範圍。,照片中一名村民在岸邊的船上作業，船艙髹橙色並貼有紅色飾物與花卉，旁置藍色水桶等器具，記錄漁家船上生活場景。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P21.jpg'
+P22,B09,B09P22,1992,16-21,漁家活動（四）,張振江,王羽彤,28-Aug-26,fishing-family activity (漁家活動),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁家活動（四），水邊綠篷棚屋與船隻；定位至村範圍。,照片中為沿岸的綠色篷棚屋與繫泊的漁船，水面平靜，呈現漁家日常停泊與棚屋相鄰的景象。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P22.jpg'
+P23,B09,B09P23,1992,16-22,漁家活動（五）,張振江,王羽彤,28-Aug-26,fishing-family activity (漁家活動),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁家活動（五），木樁與混凝土岸邊繫泊的漁船；定位至村範圍。,照片中多艘漁船繫泊於木樁與混凝土岸邊，船身顏色各異，反映村內水道作為漁船停泊地的情況。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P23.jpg'
+P24,B09,B09P24,1992,16-23,漁家活動（六）,張振江,王羽彤,28-Aug-26,fishing-family activity (漁家活動),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁家活動（六），開闊水面上的小船（遠景）；定位至馬灣涌水域範圍。,照片中為開闊水面上的小艇（舢舨），似有村民劃行，遠處為朦朧的岸線，記錄漁民以小艇往來的片段。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P24.jpg'
+P25,B09,B09P25,1992,16-24,漁家活動（七）,張振江,王羽彤,28-Aug-26,fishing-family activity (漁家活動),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁家活動（七），岸邊繫泊的漁船；定位至村範圍。,照片中多艘漁船沿岸繫泊，船身髹有紅褐、綠、藍等顏色並設篷蓋，旁為木製小碼頭，顯示漁船的色彩與繫泊方式。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P25.jpg'
+P26,B09,B09P26,1992,16-33,漁家活動（八）,張振江,王羽彤,28-Aug-26,fishing-family activity (漁家活動),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁家活動（八），水邊棚屋與藍頂建築；定位至村範圍。,照片中為水邊的棚屋構築與繫泊漁船，後方可見一座藍色屋頂的建築，屬村內臨水一帶的日常景象。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P26.jpg'
+P27,B09,B09P27,1992,18-23,漁戶（一）,顏孔昭,王羽彤,28-Aug-26,fishing household (漁戶),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁戶（一），海灣與對岸建築的寬景；定位至馬灣涌水域範圍。,照片遠攝東涌灣：前景為木排／浮台，中景大量漁船錨泊，遠處岸線與天色朦朧，呈現漁戶聚集的避風水域面貌。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P27.jpg'
+P28,B09,B09P28,1992,18-24,漁戶（二）,顏孔昭,王羽彤,28-Aug-26,fishing household (漁戶),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁戶（二），密集停泊的漁船與岸邊建築；定位至村範圍。,照片中大量漁船密集地沿岸排列，後方為低矮的岸邊建築，顯示馬灣涌作為漁船避風與停泊之處的擠迫情況。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P28.jpg'
+P29,B09,B09P29,1992,18-25,漁戶（三）,顏孔昭,王羽彤,28-Aug-26,fishing household (漁戶),馬灣涌 (Ma Wan Chung),22.284797,113.935528,22.28541914,113.9354533,Village-level,Google Maps,漁戶（三），木棧道與水上棚屋；定位至村範圍。,照片中為水上棚屋與漁船，前景可見木棧道與屋頂，反映漁戶棚屋連片的居住形態。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P29.jpg'
+P30,B09,B09P30,1992,unknown,東升樓內,顏孔昭,王羽彤,28-Aug-26,interior of Tung Shing Lau building (東升樓內),"馬灣涌 涌口街 東升樓 (Yung Hau St, Tung Shing Lau)",22.284134,113.935764,22.28418352,113.9356486,Exact,Google Maps,"東昇樓（東昇樓海鮮酒家）之建築輪廓見 OSM W1459320054，面積 141 m²、約 14×12 m。本表採用其樓中心 22.284134, 113.935764；Google/OSM 的餐館 POI 針為 22.284132, 113.935724，同在樓內、距中心約 4 m。門牌於 OSM 有 94（建築）與 106（店家）兩種標記，未能核實，故僅記『馬灣涌村』。照片為店內用膳場景，建築至今可辨識，故為 Exact。",照片為東升樓（東昇樓海鮮酒家）店內：多名食客圍坐餐桌用膳，桌上放有茶壺、茶杯與紅色塑膠籃等餐具，室內以光管照明，為漁村酒家用膳場景。東昇樓位於涌口街，至今仍存。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P30.jpg'
+P31,B09,B09P31,1992,unknown,東升樓內,unknown,王羽彤,28-Aug-26,interior of Tung Shing Lau building (東升樓內),"馬灣涌 涌口街 東升樓 (Yung Hau St, Tung Shing Lau)",22.284134,113.935764,22.28418352,113.9356486,Exact,Google Maps,"東昇樓（東昇樓海鮮酒家）之建築輪廓見 OSM W1459320054，面積 141 m²、約 14×12 m。本表採用其樓中心 22.284134, 113.935764；Google/OSM 的餐館 POI 針為 22.284132, 113.935724，同在樓內、距中心約 4 m。門牌於 OSM 有 94（建築）與 106（店家）兩種標記，未能核實，故僅記『馬灣涌村』。照片為店內用膳場景，建築至今可辨識，故為 Exact。",照片為東升樓（東昇樓海鮮酒家）店內另一角度：多桌食客正在用膳，可見茶壺餐具、吊扇、光管及牆上菜牌與紅色裝飾，記錄1990年代初酒樓內部面貌。東昇樓位於涌口街，至今仍存。,/Users/wangmengying/Desktop/ANTH3323 B/module1/photos/B09P31.jpg'
+</script>
+</head>
+<body>
+<!-- ================= 田野工作台入口場景 ================= -->
+<div id="workbench">
+    <div class="scene">
+    <svg viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice">
+        <defs>
+            <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#232a3e"/><stop offset="1" stop-color="#1a2030"/>
+            </linearGradient>
+            <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#5d442c"/><stop offset="1" stop-color="#3e2d1c"/>
+            </linearGradient>
+            <radialGradient id="lampGlow" cx=".5" cy=".5" r=".5">
+                <stop offset="0" stop-color="#ffd98a" stop-opacity=".55"/>
+                <stop offset="1" stop-color="#ffd98a" stop-opacity="0"/>
+            </radialGradient>
+            <radialGradient id="roomVign" cx=".5" cy=".45" r=".75">
+                <stop offset=".55" stop-color="#000" stop-opacity="0"/>
+                <stop offset="1" stop-color="#000" stop-opacity=".55"/>
+            </radialGradient>
+        </defs>
+        <!-- 牆與地板 -->
+        <rect x="0" y="0" width="1200" height="460" fill="url(#wall)"/>
+        <rect x="0" y="460" width="1200" height="240" fill="url(#floor)"/>
+        <g stroke="#2f2213" stroke-width="2" opacity=".5">
+            <line x1="0" y1="510" x2="1200" y2="510"/><line x1="0" y1="565" x2="1200" y2="565"/>
+            <line x1="0" y1="625" x2="1200" y2="625"/>
+            <line x1="180" y1="460" x2="120" y2="700"/><line x1="420" y1="460" x2="390" y2="700"/>
+            <line x1="660" y1="460" x2="660" y2="700"/><line x1="900" y1="460" x2="930" y2="700"/>
+            <line x1="1080" y1="460" x2="1140" y2="700"/>
+        </g>
+        <!-- 地毯（視差板塊） -->
+        <g class="fx" data-d="10">
+        <ellipse cx="720" cy="580" rx="280" ry="72" fill="#6e3a3a" opacity=".85"/>
+        <ellipse cx="720" cy="580" rx="240" ry="58" fill="none" stroke="#8a5252" stroke-width="3" opacity=".7"/>
+        </g>
+        <!-- 窗與掛鐘（視差板塊） -->
+        <g class="fx" data-d="6">
+        <rect x="690" y="110" width="150" height="170" rx="4" fill="#101722" stroke="#3a4358" stroke-width="4"/>
+        <g stroke="#3a4358" stroke-width="3"><line x1="765" y1="110" x2="765" y2="280"/><line x1="690" y1="195" x2="840" y2="195"/></g>
+        <circle cx="815" cy="145" r="13" fill="#d8dce8" opacity=".8"/>
+        <!-- 掛鐘 -->
+        <circle cx="628" cy="92" r="24" fill="#20283a" stroke="#8b93a8" stroke-width="3"/>
+        <line x1="628" y1="92" x2="628" y2="76" stroke="#c9cedd" stroke-width="2"/>
+        <line x1="628" y1="92" x2="640" y2="96" stroke="#c9cedd" stroke-width="2"/>
+        </g>
+        <!-- 軟木板（左，釘上田野照片與筆記；視差板塊） -->
+        <g class="fx" data-d="7">
+        <rect x="86" y="112" width="352" height="212" rx="6" fill="#9a7344" stroke="#6b4c28" stroke-width="7"/>
+        <rect x="98" y="124" width="328" height="188" fill="#b28a55"/>
+        <g transform="rotate(-2 150 190)">
+            <rect x="112" y="146" width="86" height="70" fill="#f4efdf" stroke="#d8d0b8"/>
+            <image href="images/B09P04.jpg" x="116" y="150" width="78" height="52" preserveAspectRatio="xMidYMid slice"/>
+            <text x="155" y="212" text-anchor="middle" font-size="8" fill="#7a6a4a">橋頭棚屋</text>
+            <circle cx="155" cy="146" r="4" fill="#c0392b"/>
+        </g>
+        <g transform="rotate(1.6 260 190)">
+            <rect x="216" y="140" width="86" height="76" fill="#f4efdf" stroke="#d8d0b8"/>
+            <image href="images/B09P13.jpg" x="220" y="144" width="78" height="58" preserveAspectRatio="xMidYMid slice"/>
+            <text x="259" y="212" text-anchor="middle" font-size="8" fill="#7a6a4a">漁民村全景</text>
+            <circle cx="259" cy="140" r="4" fill="#2e6da4"/>
+        </g>
+        <g transform="rotate(-1.2 350 190)">
+            <rect x="318" y="148" width="86" height="68" fill="#f4efdf" stroke="#d8d0b8"/>
+            <image href="images/B09P25.jpg" x="322" y="152" width="78" height="50" preserveAspectRatio="xMidYMid slice"/>
+            <text x="361" y="212" text-anchor="middle" font-size="8" fill="#7a6a4a">繫泊漁船</text>
+            <circle cx="361" cy="148" r="4" fill="#c0392b"/>
+        </g>
+        <g transform="rotate(2 200 260)">
+            <rect x="130" y="238" width="120" height="60" fill="#efe6c8" stroke="#d8cda8"/>
+            <text x="142" y="258" font-size="9" fill="#8a744c">田野筆記 · Feb/1992</text>
+            <line x1="142" y1="268" x2="236" y2="268" stroke="#c4b48c" stroke-width="2"/>
+            <line x1="142" y1="278" x2="224" y2="278" stroke="#c4b48c" stroke-width="2"/>
+            <circle cx="190" cy="238" r="4" fill="#c0392b"/>
+        </g>
+        <g transform="rotate(-1.8 330 262)">
+            <rect x="286" y="236" width="120" height="60" fill="#efe6c8" stroke="#d8cda8"/>
+            <text x="298" y="256" font-size="9" fill="#8a744c">1992 Archive · B09</text>
+            <line x1="298" y1="266" x2="392" y2="266" stroke="#c4b48c" stroke-width="2"/>
+            <line x1="298" y1="276" x2="380" y2="276" stroke="#c4b48c" stroke-width="2"/>
+            <circle cx="346" cy="236" r="4" fill="#2e6da4"/>
+        </g>
+        </g>
+        <!-- 家族樹背景板（右牆，保留；視差板塊） -->
+        <g class="tree-poster fx" data-d="7">
+            <rect x="905" y="86" width="252" height="330" fill="#d9cfb4" stroke="#b3a67f" stroke-width="4"/>
+            <rect x="915" y="96" width="232" height="310" fill="none" stroke="#b3a67f" stroke-width="1"/>
+            <text x="1031" y="122" text-anchor="middle" font-size="14" fill="#6b5a34"
+                font-family="Songti TC, serif" letter-spacing="4">家 戶 譜 系</text>
+            <text x="1031" y="138" text-anchor="middle" font-size="8" fill="#98875e">馬灣涌 · Ma Wan Chung</text>
+            <g stroke="#8a744c" stroke-width="1.2" fill="none">
+                <line x1="1031" y1="152" x2="1031" y2="166"/>
+                <line x1="963" y1="166" x2="1099" y2="166"/>
+                <line x1="963" y1="166" x2="963" y2="180"/><line x1="1099" y1="166" x2="1099" y2="180"/>
+                <line x1="963" y1="222" x2="963" y2="240"/><line x1="1099" y1="222" x2="1099" y2="240"/>
+                <line x1="997" y1="240" x2="1065" y2="240"/>
+                <line x1="997" y1="240" x2="997" y2="254"/><line x1="1065" y1="240" x2="1065" y2="254"/>
+            </g>
+            <g fill="#e9e2cc" stroke="#a5946a" stroke-width="1.2">
+                <rect x="948" y="180" width="30" height="42" rx="2"/>
+                <rect x="1084" y="180" width="30" height="42" rx="2"/>
+                <rect x="982" y="254" width="30" height="42" rx="2"/>
+                <rect x="1050" y="254" width="30" height="42" rx="2"/>
+                <rect x="1016" y="300" width="30" height="42" rx="2"/>
+            </g>
+            <g fill="#98875e" font-size="7.5" text-anchor="middle">
+                <text x="963" y="198">張</text><text x="1099" y="198">陳</text>
+                <text x="997" y="272">黃</text><text x="1065" y="272">李</text>
+                <text x="1031" y="318">蘇</text>
+            </g>
+            <g stroke="#b3a67f" stroke-width="1" opacity=".8">
+                <line x1="930" y1="356" x2="1132" y2="356"/>
+                <text x="1031" y="372" text-anchor="middle" font-size="7" fill="#98875e"
+                    stroke="none">1992 田野記錄 · 未完待考</text>
+            </g>
+            <circle cx="920" cy="92" r="4" fill="#c0392b"/><circle cx="1142" cy="92" r="4" fill="#c0392b"/>
+        </g>
+        <!-- 燈與光暈（視差板塊） -->
+        <g class="fx" data-d="5">
+            <line x1="600" y1="0" x2="600" y2="36" stroke="#3a4358" stroke-width="3"/>
+            <path d="M580 36 L620 36 L612 52 L588 52 Z" fill="#3a4358"/>
+            <ellipse cx="600" cy="56" rx="26" ry="8" fill="#ffe9b0"/>
+            <ellipse class="glow" cx="600" cy="70" rx="200" ry="120" fill="url(#lampGlow)"/>
+        </g>
+        <!-- 懶人沙發（視差板塊） -->
+        <g class="fx" data-d="12">
+        <ellipse cx="470" cy="430" rx="58" ry="26" fill="#26304a"/>
+        <ellipse cx="470" cy="420" rx="52" ry="24" fill="#2e3a58"/>
+        </g>
+        <!-- 工作台（可點；視差板塊） -->
+        <g class="desk-hotspot fx" id="deskHotspot" data-d="14">
+            <ellipse cx="600" cy="70" rx="160" ry="90" fill="url(#lampGlow)" opacity=".5"/>
+            <polygon class="desk-top" points="300,430 880,430 920,470 260,470" fill="#7a5a3a"/>
+            <polygon points="260,470 920,470 920,486 260,486" fill="#5d4128"/>
+            <rect x="300" y="486" width="270" height="150" fill="#6b4c2e"/>
+            <rect x="312" y="500" width="246" height="34" rx="3" fill="#7d5a36"/>
+            <rect x="312" y="544" width="246" height="34" rx="3" fill="#7d5a36"/>
+            <rect x="312" y="588" width="246" height="34" rx="3" fill="#7d5a36"/>
+            <g fill="#caa25e"><rect x="425" y="513" width="20" height="6" rx="3"/>
+                <rect x="425" y="557" width="20" height="6" rx="3"/><rect x="425" y="601" width="20" height="6" rx="3"/></g>
+            <rect x="610" y="486" width="270" height="150" fill="#6b4c2e"/>
+            <rect x="622" y="500" width="246" height="70" rx="3" fill="#7d5a36"/>
+            <rect x="622" y="582" width="246" height="56" rx="3" fill="#7d5a36"/>
+            <rect x="735" y="530" width="20" height="6" rx="3" fill="#caa25e"/>
+            <g>
+                <rect x="700" y="382" width="120" height="48" rx="4" fill="#3f4c66"/>
+                <rect x="700" y="382" width="120" height="12" rx="4" fill="#55688c"/>
+                <text x="760" y="418" text-anchor="middle" font-size="13" fill="#d9b96a"
+                    font-family="Songti TC, serif" letter-spacing="1">1992 ARCHIVE</text>
+                <rect x="700" y="378" width="120" height="6" rx="2" fill="#2c3650"/>
+            </g>
+            <g>
+                <rect x="540" y="404" width="70" height="8" fill="#8f8471" transform="rotate(-2 575 408)"/>
+                <rect x="536" y="414" width="76" height="8" fill="#a1947c" transform="rotate(1.5 574 418)"/>
+                <rect x="542" y="422" width="70" height="8" fill="#8f8471"/>
+            </g>
+            <g stroke="#43506b" stroke-width="5" fill="none">
+                <path d="M350 430 L350 372 L392 352"/>
+            </g>
+            <path d="M378 344 L410 344 L402 366 L384 366 Z" fill="#43506b"/>
+            <ellipse cx="394" cy="368" rx="16" ry="5" fill="#ffe9b0"/>
+            <ellipse class="glow" cx="400" cy="392" rx="120" ry="70" fill="url(#lampGlow)"/>
+            <rect x="200" y="500" width="90" height="12" rx="3" fill="#7a5a3a"/>
+            <line x1="212" y1="512" x2="204" y2="600" stroke="#5d4128" stroke-width="8"/>
+            <line x1="278" y1="512" x2="286" y2="600" stroke="#5d4128" stroke-width="8"/>
+        </g>
+        <!-- 暗角 -->
+        <rect x="0" y="0" width="1200" height="700" fill="url(#roomVign)" pointer-events="none"/>
+    </svg>
+    </div>
+    <div id="hint">點 擊 工 作 台 查 看 檔 案</div>
+    <div id="toast"></div>
+    <div id="wbFade"></div>
+    <!-- 檔案簿 -->
+    <div id="bookWrap">
+        <button id="bookClose" title="收起">✕</button>
+        <div class="book-stage">
+            <div id="book"></div>
+            <div class="book-nav">
+                <button id="pgPrev">‹</button><span id="pgInd">封面</span><button id="pgNext">›</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="app">
+    <aside class="col-filters">
+        <div class="brand">
+            <div class="brand-tag">Field Photo Archive · 1992</div>
+            <h1>B09 照片地圖</h1>
+            <div class="sub">馬灣涌 (Ma Wan Chung) · 張振江、顏孔昭 攝</div>
+        </div>
+        <div class="count-box">
+            <span class="c-lbl">目前顯示記錄</span>
+            <span><b id="count">–</b><span class="c-sep">/</span><span id="total">–</span></span>
+        </div>
+        <div class="search-box"><input id="search" type="search" placeholder="搜尋內容／地點／編號…" autocomplete="off"></div>
+        <div class="tagline">Use the filters to compare what was photographed, where, and with what degree of spatial certainty.</div>
+        <div class="legend">
+            <span><i style="background:#33a02c"></i>Exact</span>
+            <span><i style="background:#fff400"></i>Approximate</span>
+            <span><i style="background:#fb9a99"></i>Village-level</span>
+        </div>
+        <div class="quick-actions">
+            <button id="btnUncertain">Show uncertain locations</button>
+            <button id="btnReset">Reset</button>
+        </div>
+        <div id="quickNote"></div>
+        <div id="filter-root"></div>
+        <div class="legend-note">地圖可於右上角面板一鍵開關 1963 年航照（四幅合併）與現今地形圖（東西幅合併）。點選 marker 後於右側顯示照片與資料；點數字聚類圓可展開同點照片。</div>
+    </aside>
+    <main class="col-map"><div id="map"></div><div id="filmstrip"></div>
+        <div id="mapHint">在地圖上<b>點選聚類圓或照片</b>，展開 1992 年的馬灣涌檔案 →</div>
+        <a id="backHome" title="返回田野工作台">⌂</a></main>
+    <aside class="col-detail" id="detail">
+        <div class="detail-empty">← 在地圖上點選聚類圓或照片 marker<br>照片檔案會在此展開</div>
+    </aside>
+</div>
+
+<script src="js/leaflet.js"></script>
+<script src="js/leaflet.markercluster.js"></script>
+<script src="js/Autolinker.min.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    // ---------- 0. CSV 來源（相對路徑，直接讀原始檔，不另存副本） ----------
+    // 候選路徑：伺服器根目錄不同時自動嘗試（本頁位於 module1/photos/<匯出夾>/ 之下）
+    var CSV_CANDIDATES = ['../../individualphoto(B09).csv', '../../../individualphoto(B09).csv'];
+
+    // ---------- 1. Raster（沿用原匯出之圖幅與 bounds） ----------
+    var RASTERS = [
+        { name: '1963年航照（西北幅）', url: 'data/1963map2_2.jpg', bounds: [[22.28449393403416,113.92682402458401],[22.289923306442734,113.93411125972408]] },
+        { name: '1963年航照（東北幅）', url: 'data/1963map1_5.jpg', bounds: [[22.2845049777764,113.93410190516055],[22.289934026843603,113.94138886434231]] },
+        { name: '1963年航照（西南幅）', url: 'data/1963map4_3.jpg', bounds: [[22.279075604744705,113.92683365962723],[22.2845049777764,113.934120611394]] },
+        { name: '1963年航照（東南幅）', url: 'data/1963map3_4.jpg', bounds: [[22.27908664550362,113.93411125972408],[22.284515695281364,113.94139793561807]] },
+        { name: '現今地形圖（西幅）',   url: 'data/2_0.png',       bounds: [[22.273607952312364,113.89769308407159],[22.300758044667496,113.93413201704129]] },
+        { name: '現今地形圖（東幅）',   url: 'data/1_1.png',       bounds: [[22.273666401328807,113.93408524462212],[22.300808410150857,113.9705172786357]] }
+    ];
+
+    // ---------- 2. 小型 CSV 解析器（支援引號與逗號） ----------
+    function parseCSV(text) {
+        var rows = [], row = [], cur = '', inQ = false, i, c;
+        for (i = 0; i < text.length; i++) {
+            c = text[i];
+            if (inQ) {
+                if (c === '"') {
+                    if (text[i + 1] === '"') { cur += '"'; i++; }
+                    else { inQ = false; }
+                } else { cur += c; }
+            } else {
+                if (c === '"') { inQ = true; }
+                else if (c === ',') { row.push(cur); cur = ''; }
+                else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+                else if (c !== '\r') { cur += c; }
+            }
+        }
+        if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+        if (!rows.length) return [];
+        while (rows.length && rows[0].length === 1 && rows[0][0] === '') rows.shift();  // 跳過開頭空行（內嵌區塊標籤後的換行）
+        var head = rows[0];
+        return rows.slice(1).filter(function (r) { return r.length > 1 && r[0] !== ''; })
+            .map(function (r) {
+                var o = {};
+                head.forEach(function (h, idx) { o[h.trim()] = (r[idx] || '').trim(); });
+                return o;
+            });
+    }
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function fileName(rec) {
+        var p = (rec['Photo_Path'] || '').replace(/'/g, '').trim();
+        return p.split('/').pop().trim();
+    }
+
+    // ---------- 3. 狀態 ----------
+    var DATA = [];
+    // 篩選順序：1 Place → 2 Subject → 3 Location precision（選項皆從 DATA 動態讀取）
+    var FILTER_KEYS = ['place_name', 'photo_subject', 'location_precision'];
+    var FILTER_LABELS = { place_name: 'place_name（地點）', photo_subject: 'photo_subject（照片內容）', location_precision: 'location_precision（位置精度）' };
+    var selected = {};           // key -> Set(選中的值)；空 Set = 全選
+    FILTER_KEYS.forEach(function (k) { selected[k] = new Set(); });
+    var markersById = {};        // 總編號 -> circleMarker
+    var highlighted = null;
+    var cluster, map;            // （拍攝視線圖層已移除）
+    var curRec = null;           // 右欄目前顯示的記錄（lightbox 說明用）
+    var filteredList = [];       // 目前通過篩選的記錄（底片條／lightbox 翻頁順序）
+    var searchTerm = '';         // 搜尋關鍵字（小寫）
+
+    function passes(rec) {
+        for (var i = 0; i < FILTER_KEYS.length; i++) {
+            var k = FILTER_KEYS[i];
+            var s = selected[k];   // 語意：s = 被取消勾選（排除）的值集合
+            if (s.size && s.has(rec[k])) return false;
+        }
+        if (searchTerm) {
+            var hay = (rec['照片總編號'] + ' ' + rec['photo_subject'] + ' ' + rec['place_name']
+                + ' ' + rec['notes'] + ' ' + rec['place/subject_information'] + ' ' + rec['拍攝者']).toLowerCase();
+            if (hay.indexOf(searchTerm) === -1) return false;
+        }
+        return true;
+    }
+
+    // ---------- 4. 地圖 ----------
+    function buildMap() {
+        map = L.map('map', {
+            maxZoom: 20, zoomControl: false,
+            /* 縮放必須維持整數級：Leaflet.markercluster 不支援小數縮放，
+               小數級會讓聚類重算錯亂（點開聚類後舊圓留在原地、全部點不開）。 */
+            wheelPxPerZoomLevel: 140,    // 滾輪靈敏度調低＝一次滾動縮得少＝更順
+            inertia: true, inertiaDeceleration: 3000, easeLinearity: .22   // 拖拽滑行慣性
+        });
+        /* 散點專屬 pane（z 620 > markerPane 600）：照片點永遠畫在聚類圓之上。
+           注意：canvas renderer 不能放這一層——全幅 canvas 會蓋住聚類 divIcon、
+           吞掉所有點擊（蜘蛛腿是隱形的，放回預設底層即可）。 */
+        map.createPane('dots');
+        map.getPane('dots').style.zIndex = 620;
+        map.options.renderer = L.canvas({ padding: .5 });
+        map.fitBounds([[22.277544353403083,113.92731391849313],[22.290035641847677,113.94905732371413]]);
+        var overlays = {};
+        // 依名稱分組：1963 航照四幅一組、現今地形圖東西幅一組，各自一鍵開關
+        var tiles1963 = [], tilesModern = [];
+        RASTERS.forEach(function (r) {
+            var lyr = L.imageOverlay(r.url, r.bounds);
+            (r.name.indexOf('1963') === 0 ? tiles1963 : tilesModern).push(lyr);
+        });
+        var group1963 = L.layerGroup(tiles1963).addTo(map);   // 先加（在下層）
+        var groupModern = L.layerGroup(tilesModern).addTo(map); // 後加（在上層，與原版一致）
+        overlays['現今地圖（東西幅）'] = groupModern;
+        overlays['1963年航照（四幅合併）'] = group1963;
+        cluster = L.markerClusterGroup({            showCoverageOnHover: false, maxClusterRadius: 45,
+            animate: false,
+            /* 點開行為回到原版：點聚類只放大一級到它的範圍（插件內建
+               zoomToBoundsOnClick），玩家自己決定要不要繼續點進去；
+               spiderfyOnMaxZoom:false 交由下方 clusterclick 在最大級手動散開。 */
+            spiderfyOnMaxZoom: false,
+            zoomToBoundsOnClick: true,
+            spiderfyDistanceMultiplier: 1.35,   // 散點漂浮範圍稍大
+            spiderLegPolylineOptions: { opacity: 0, weight: 0 },   // 不畫蜘蛛連線，點直接漂浮在周圍
+            iconCreateFunction: function (c) {
+                var n = c.getChildCount();
+                var cls = 'marker-cluster cl' + (n >= 20 ? ' cl-xl' : n >= 8 ? ' cl-lg' : '');
+                var size = n >= 20 ? 46 : n >= 8 ? 40 : 34;
+                return L.divIcon({ html: '<span>' + n + '</span>', className: cls,
+                    iconSize: [size, size] });
+            }
+        });
+        cluster.addTo(map);
+        /* 最大縮放級再點聚類 → 散開成漂浮的點（其餘級別交給插件內建放大） */
+        cluster.on('clusterclick', function (a) {
+            if (map.getZoom() >= map.getMaxZoom()) a.layer.spiderfy();
+        });
+        /* latlng → 視口座標（latLngToContainerPoint 是相對地圖容器的，
+           需加上地圖容器在視口中的偏移，才能與 getBoundingClientRect 比較） */
+        function clientPointOf(ll) {
+            var pt = map.latLngToContainerPoint(ll);
+            var mr = map.getContainer().getBoundingClientRect();
+            return { x: pt.x + mr.left, y: pt.y + mr.top };
+        }
+        /* 散開時隱藏父聚類圓：插件預設只把父圓淡到 30% 留在原地（立體徽章下
+           看起來像「聚類圓還在」），且縮放/平移會讓插件以原樣重新生成父圓、
+           甚至重建整棵聚類樹——事件鉤子追不住，改用 MutationObserver 盯
+           marker 圖標層：處於散開狀態時，任何「數量相同＋位置重合」的聚類圓
+           一出現就立刻隱藏；收合（unspiderfied）後停止隱藏。 */
+        var markerPane = map.getPane('markerPane');
+        var hiddenGhosts = [];   // 被隱藏的父圓圖標（收合後要還原，避免聚類「憑空消失」）
+        var ghostMO = new MutationObserver(function () {
+            if (!cluster._spiderfied || !cluster._spiderfied.getLatLng) {
+                // 已收合：還原所有被隱藏的圖標（縮放會重建圖標元素，
+                // 只靠 unspiderfied 事件可能追不到新的那顆）
+                hiddenGhosts.forEach(function (el) {
+                    el.style.opacity = ''; el.style.pointerEvents = ''; });
+                hiddenGhosts.length = 0;
+                return;
+            }
+            var pt = clientPointOf(cluster._spiderfied.getLatLng());
+            var n = String(cluster._spiderfied.getChildCount());
+            Array.prototype.forEach.call(
+                markerPane.querySelectorAll('.marker-cluster'), function (el) {
+                if (el.textContent.trim() !== n) return;
+                var r = el.getBoundingClientRect();
+                /* 只比對「數量相同＋位置幾乎完全重合」（< 8px）：
+                   父圓永遠精準坐落在散開中心，而旁邊可能有數量相同、
+                   位置相近的真實聚類（如右側兩顆 6）——半徑太寬會把
+                   別顆真聚類也藏掉，看起來像「點開這顆、那顆消失」。 */
+                if (Math.abs(r.x + r.width / 2 - pt.x) < 8 &&
+                    Math.abs(r.y + r.height / 2 - pt.y) < 8) {
+                    el.style.opacity = 0;
+                    el.style.pointerEvents = 'none';
+                    if (hiddenGhosts.indexOf(el) === -1) hiddenGhosts.push(el);
+                }
+            });
+        });
+        ghostMO.observe(markerPane, { childList: true, subtree: true });
+        /* 還原「所有」被隱藏的圖標再清空清單——只還原事件帶來的那顆，
+           會讓曾經被誤判／重建過的幽靈永久卡在透明狀態（聚類憑空消失）。 */
+        function restoreGhosts() {
+            hiddenGhosts.forEach(function (el) {
+                el.style.opacity = ''; el.style.pointerEvents = '';
+            });
+            hiddenGhosts.length = 0;
+        }
+        cluster.on('unspiderfied', function (e) {
+            var el = e.cluster._icon;
+            if (el) { el.style.opacity = ''; el.style.pointerEvents = ''; }
+            restoreGhosts();
+        });
+        overlays['照片位置 (B09)'] = cluster;
+        L.control.layers(null, overlays, { collapsed: true, position: 'topright' }).addTo(map);
+        /* 圖層面板改為純點擊開關：
+           Leaflet 預設 hover 就展開、滑走就收合、展開後圖示還會消失，
+           實際操作起來像「按鈕點不到」。以下停用 hover 行為並改為點擊切換。 */
+        (function () {
+            var sec = document.querySelector('.leaflet-control-layers');
+            if (!sec) return;
+            /* 1) 攔掉 Leaflet 的 mouseenter/mouseleave（hover 展開/滑走收合） */
+            var p = sec.parentElement;
+            ['mouseenter', 'mouseleave'].forEach(function (t) {
+                p.addEventListener(t, function (e) {
+                    if (sec.contains(e.target)) e.stopPropagation();
+                }, true);
+            });
+            /* 2) 只有點圖示才開/關面板。
+               注意：不能對面板內所有點擊 stopPropagation——捕獲階段攔掉後，
+               事件到不了 Leaflet 綁在更深層的 checkbox handler，圖層勾選會全部失效。
+               面板內部點擊本來就到不了地圖（Leaflet 對控件容器停用了點擊傳播），
+               無需在這裡多攔一層。 */
+            sec.addEventListener('click', function (e) {
+                if (!e.target.closest('.leaflet-control-layers-toggle')) return;
+                e.stopPropagation();
+                var open = !sec.classList.contains('layers-open');
+                sec.classList.toggle('layers-open', open);
+                sec.classList.toggle('leaflet-control-layers-expanded', open);
+            }, true);
+            /* 3) 點地圖空白處收合 */
+            map.on('click', function () { sec.classList.remove('layers-open'); });
+        })();
+        L.control.zoom({ position: 'topleft' }).addTo(map);
+    }
+
+    function precClass(rec) {
+        switch (rec['location_precision']) {
+            case 'Exact':         return 'dot-exact';    // 綠（原版 QGIS 分類色）
+            case 'Approximate':   return 'dot-approx';   // 黃
+            case 'Village-level': return 'dot-village';  // 粉紅
+            default:              return 'dot-other';
+        }
+    }
+
+    function buildMarkers() {
+        cluster.clearLayers();
+        markersById = {};
+        var pts = [];
+        DATA.forEach(function (rec) {
+            var la = parseFloat(rec['shoot_lat']), lo = parseFloat(rec['shoot_lng']);
+            if (isNaN(la) || isNaN(lo)) return;
+            // 立體小徽章（divIcon）：與聚類同一套 3D 語彙，放散點專屬高層
+            var m = L.marker([la, lo], {
+                icon: L.divIcon({ className: 'dot-wrap',
+                    html: '<span class="dot-badge ' + precClass(rec) + '"></span>',
+                    iconSize: [18, 18], iconAnchor: [9, 9] }),
+                pane: 'dots', keyboard: false
+            });
+            m._pid = rec['照片總編號'];
+            m.on('click', function () { selectRecord(m._pid, true); });
+            markersById[m._pid] = m;
+            pts.push(m);
+        });
+        cluster.addLayers(pts);
+    }
+
+    function refreshFilter() {
+        var n = 0;
+        filteredList = [];
+        DATA.forEach(function (rec) {
+            var m = markersById[rec['照片總編號']];
+            if (!m) return;
+            var show = passes(rec);
+            if (show) { if (!cluster.hasLayer(m)) cluster.addLayer(m); n++; filteredList.push(rec); }
+            else if (cluster.hasLayer(m)) cluster.removeLayer(m);
+        });
+        document.getElementById('count').textContent = n;
+        document.getElementById('count').classList.toggle('zero', n === 0);
+        buildFilmstrip();
+    }
+
+    // ---------- 5. 篩選面板 ----------
+    function buildFilters() {
+        var root = document.getElementById('filter-root');
+        root.innerHTML = '';
+        FILTER_KEYS.forEach(function (k, fi) {
+            var vals = {};
+            DATA.forEach(function (r) { var v = r[k] || '—'; vals[v] = (vals[v] || 0) + 1; });
+            var keys = Object.keys(vals).sort();
+            var div = document.createElement('div');
+            div.className = 'fgroup';
+            var html = '<h3><span class="step">' + (fi + 1) + '</span>' + esc(FILTER_LABELS[k]) + '</h3>'
+                + '<div class="fbtns"><button data-act="all" data-k="' + k + '">Select all</button>'
+                + '<button data-act="clear" data-k="' + k + '">Clear</button></div>';
+            keys.forEach(function (v) {
+                html += '<label class="fopt"><input type="checkbox" checked data-k="' + k + '" value="' + esc(v) + '">'
+                    + esc(v) + ' <span class="n">(' + vals[v] + ')</span></label>';
+            });
+            if (k === 'location_precision') {
+                html += '<div class="fnote">'
+                    + '<b>Village-level</b>：只知道屬於某村落，marker 不代表精確拍攝點。<br>'
+                    + '<b>Approximate</b>：位置由舊地圖、照片、筆記或其他線索估算，仍有不確定性。'
+                    + '</div>';
+            }
+            div.innerHTML = html;
+            root.appendChild(div);
+        });
+        root.addEventListener('click', function (e) {
+            var b = e.target.closest('button');
+            if (!b) return;
+            var k = b.getAttribute('data-k');
+            var set = selected[k];
+            if (b.getAttribute('data-act') === 'all') set.clear();
+            else keysOf(k).forEach(function (v) { set.add(v); });
+            syncCheckbox(k);
+            if (k === 'location_precision') { quickNote(''); syncUncertainBtn(); }   // 手動改動後，說明行失效、按鈕同步激活態
+            refreshFilter();
+        });
+        root.addEventListener('change', function (e) {
+            var cb = e.target;
+            if (cb.tagName !== 'INPUT') return;
+            var k = cb.getAttribute('data-k'), v = cb.value;
+            if (cb.checked) selected[k].delete(v); else selected[k].add(v);
+            if (k === 'location_precision') { quickNote(''); syncUncertainBtn(); }
+            refreshFilter();
+        });
+    }
+    function keysOf(k) {
+        var s = new Set();
+        DATA.forEach(function (r) { s.add(r[k] || '—'); });
+        return Array.from(s);
+    }
+    function syncCheckbox(k) {
+        var all = keysOf(k);
+        document.querySelectorAll('input[data-k="' + k + '"]').forEach(function (cb) {
+            cb.checked = !selected[k].has(cb.value);
+        });
+    }
+
+    // ---------- 5b. 快速操作：Show uncertain locations / Reset ----------
+    /* 只動 interface filter（selected 集合），不更動任何資料：
+       - 按下「Show uncertain locations」→ 排除 Village-level / Approximate 以外的類別；
+         若資料中只有這兩類（無 Exact 等確定類別），則顯示全部並在說明行講清楚。
+       - 按下「Reset」→ 清空所有篩選與搜尋，還原全部。 */
+    var UNCERTAIN_PREC = ['Approximate', 'Village-level'];
+    var btnUncertain = document.getElementById('btnUncertain');
+    function uncertainActive() {
+        // 激活態＝資料中所有「確定類別」都被排除（即只留 Village-level / Approximate）
+        var excluded = selected.location_precision;
+        var hasCertain = false;
+        for (var i = 0; i < DATA.length; i++) {
+            var v = DATA[i]['location_precision'] || '—';
+            if (UNCERTAIN_PREC.indexOf(v) === -1) {
+                hasCertain = true;
+                if (!excluded.has(v)) return false;
+            }
+        }
+        return hasCertain;   // 資料只有兩類時，按鈕不呈現激活色（顯示全部＋說明）
+    }
+    function syncUncertainBtn() { btnUncertain.classList.toggle('on', uncertainActive()); }
+    function quickNote(html) {
+        var el = document.getElementById('quickNote');
+        if (!html) { el.className = ''; el.innerHTML = ''; return; }
+        el.innerHTML = html;
+        el.className = 'show';
+    }
+    function precCounts() {
+        var c = {};
+        DATA.forEach(function (r) {
+            var v = r['location_precision'] || '—';
+            c[v] = (c[v] || 0) + 1;
+        });
+        return c;
+    }
+    btnUncertain.addEventListener('click', function () {
+        var c = precCounts();
+        var certain = Object.keys(c).filter(function (v) {
+            return UNCERTAIN_PREC.indexOf(v) === -1;
+        });
+        if (!certain.length) {
+            // 資料只有這兩類 → 無確定類別可排除，顯示全部並說明
+            FILTER_KEYS.forEach(function (k) { selected[k].clear(); });
+            FILTER_KEYS.forEach(syncCheckbox);
+            syncUncertainBtn();
+            refreshFilter();
+            quickNote('<b>說明：</b>本資料集的 location_precision 只有 <b>Village-level</b>（'
+                + (c['Village-level'] || 0) + ' 筆）與 <b>Approximate</b>（'
+                + (c['Approximate'] || 0) + ' 筆）兩類——所有照片的位置都帶有不確定性，因此顯示全部 '
+                + DATA.length + ' 筆記錄。');
+            return;
+        }
+        /* 讓「Show uncertain locations」的承諾成立：按下後結果就「只」是
+           Village-level / Approximate 的記錄——因此同時清空其他篩選，
+           避免殘留的地點／內容篩選把結果 intersect 成 0 筆（介面篩選，不動資料）。 */
+        selected.place_name.clear();
+        selected.photo_subject.clear();
+        FILTER_KEYS.forEach(syncCheckbox);
+        selected.location_precision = new Set(certain);   // 排除確定類別（= 只留兩類不確定）
+        syncCheckbox('location_precision');
+        syncUncertainBtn();
+        refreshFilter();
+        quickNote('已只顯示位置不確定的記錄（<b>Approximate</b>、<b>Village-level</b>）；隱藏 '
+            + certain.map(function (v) { return '<b>' + esc(v) + '</b>（' + c[v] + ' 筆）'; }).join('、')
+            + '。可再按 Reset 還原。');
+    });
+    document.getElementById('btnReset').addEventListener('click', function () {
+        FILTER_KEYS.forEach(function (k) { selected[k].clear(); });
+        searchTerm = '';
+        document.getElementById('search').value = '';
+        FILTER_KEYS.forEach(syncCheckbox);
+        syncUncertainBtn();
+        quickNote('');
+        refreshFilter();
+    });
+
+    // ---------- 6. 右欄詳情 ----------
+    function selectRecord(pid, scroll) {
+        var rec = null;
+        for (var i = 0; i < DATA.length; i++) { if (DATA[i]['照片總編號'] === pid) { rec = DATA[i]; break; } }
+        if (!rec) return;
+        curRec = rec;
+        // highlight
+        if (highlighted && markersById[highlighted]) {
+            var oldEl = markersById[highlighted].getElement && markersById[highlighted].getElement();
+            if (oldEl) oldEl.classList.remove('hi');
+        }
+        highlighted = pid;
+        var m = markersById[pid];
+        if (m) {
+            var el = m.getElement && m.getElement();
+            if (el) el.classList.add('hi');
+        }
+        // panel
+        var fn = fileName(rec);
+        function coord(lat, lng) {
+            if (!lat || !lng || isNaN(parseFloat(lat)) || isNaN(parseFloat(lng))) return '';
+            return parseFloat(lat).toFixed(4) + ', ' + parseFloat(lng).toFixed(4);
+        }
+        var prec = rec['location_precision'] || '';
+        var precCls = prec === 'Exact' ? 'b-exact' : prec === 'Approximate' ? 'b-approx' : 'b-village';
+        var rows = [
+            ['照片流水號', rec['照片流水號']],
+            ['box no.', rec['box no.']],
+            ['照片總編號', rec['照片總編號']],
+            ['拍攝者', rec['拍攝者']],
+            ['拍攝日期', rec['指攝日期']],
+            ['底片編號', rec['底片編號']],
+            ['照片內容', rec['photo_subject']],
+            ['地點', rec['place_name']],
+            ['描述', rec['place/subject_information']],
+            ['位置精度', prec],
+            ['資料來源', rec['location_source']],
+            ['拍攝點', coord(rec['shoot_lat'], rec['shoot_lng'])],
+            ['被攝點', coord(rec['subject_lat'], rec['subject_lng'])],
+            ['定位說明', rec['location_note']]
+        ];
+        var html = '<div class="d-head"><div class="d-title">' + esc(rec['照片總編號']) + '</div>'
+            + (prec ? '<span class="badge ' + precCls + '">' + esc(prec) + '</span>' : '')
+            + '</div>'
+            + '<div class="d-notes">' + esc(rec['notes']) + '</div>'
+            + (fn ? '<figure class="d-photoWrap"><img class="d-photo" src="images/'
+                + encodeURIComponent(fn) + '" alt="' + esc(rec['照片總編號']) + '">'
+                + '<figcaption class="d-cap">' + esc(fn) + '</figcaption></figure>' : '')
+            + '<div class="d-table">';
+        rows.forEach(function (r) {
+            var v = r[1];
+            if (v !== '' && v != null) {
+                var mono = (r[0] === '拍攝點' || r[0] === '被攝點') ? ' mono' : '';
+                html += '<div class="d-row"><div class="d-lbl">' + r[0] + '</div>'
+                    + '<div class="d-val' + mono + '">' + esc(v) + '</div></div>';
+            }
+        });
+        html += '</div>';
+        var detail = document.getElementById('detail');
+        detail.innerHTML = html;
+        detail.scrollTop = 0;   // 換照片時從頭閱讀，不殘留上一張的捲動位置
+        // URL 分享：網址帶 #B09P02 可直接定位
+        try { if (location.hash !== '#' + pid) history.replaceState(null, '', '#' + pid); } catch (err) {}
+        syncFilmstripActive();
+        if (scroll && window.innerWidth <= 1100) {
+            detail.scrollIntoView({ behavior: 'smooth' });
+        }
+        // 入口提示膠囊功成身退：選中第一張照片後淡出
+        (function () {
+            var hint = document.getElementById('mapHint');
+            if (!hint || hint.dataset.gone) return;
+            hint.dataset.gone = '1';
+            hint.classList.add('gone');
+            setTimeout(function () { hint.style.display = 'none'; }, 1000);
+        })();
+    }
+
+    // ---------- 7. Lightbox（點擊右欄照片放大，背景虛化，← → 翻頁） ----------
+    var lb = document.createElement('div');
+    lb.className = 'lightbox';
+    lb.innerHTML = '<button class="lb-nav lb-prev" title="上一張">‹</button>'
+        + '<img alt=""><button class="lb-nav lb-next" title="下一張">›</button>'
+        + '<div class="lb-cap"></div><div class="lb-hint"><span id="lbPos"></span>← → 翻頁 · 點擊任意處或按 Esc 關閉</div>';
+    document.body.appendChild(lb);
+
+    function updateLightbox() {
+        if (!curRec) return;
+        var fn = fileName(curRec);
+        if (!fn) return;
+        lb.querySelector('img').src = 'images/' + encodeURIComponent(fn);
+        lb.querySelector('.lb-cap').innerHTML = '<b>' + esc(curRec['照片總編號']) + '</b>'
+            + esc(curRec['photo_subject'] || '')
+            + (curRec['place_name'] ? ' ' + esc(curRec['place_name']) : '');
+        // 位置計數（第 n / m 張）：讓玩家知道檔案翻到哪裡
+        var idx = -1, i;
+        for (i = 0; i < filteredList.length; i++) {
+            if (filteredList[i]['照片總編號'] === curRec['照片總編號']) { idx = i; break; }
+        }
+        var pos = lb.querySelector('#lbPos');
+        if (pos) pos.textContent = (filteredList.length && idx > -1)
+            ? (idx + 1) + ' / ' + filteredList.length + ' · ' : '';
+    }
+    function lbStep(d) {
+        if (!curRec || !filteredList.length) return;
+        var idx = -1, i;
+        for (i = 0; i < filteredList.length; i++) {
+            if (filteredList[i]['照片總編號'] === curRec['照片總編號']) { idx = i; break; }
+        }
+        idx = (idx === -1 ? 0 : idx + d + filteredList.length) % filteredList.length;
+        selectRecord(filteredList[idx]['照片總編號']);
+        updateLightbox();
+    }
+    lb.addEventListener('click', function () { lb.classList.remove('open'); });
+    lb.querySelector('.lb-prev').addEventListener('click', function (e) { e.stopPropagation(); lbStep(-1); });
+    lb.querySelector('.lb-next').addEventListener('click', function (e) { e.stopPropagation(); lbStep(1); });
+    document.addEventListener('keydown', function (e) {
+        if (!lb.classList.contains('open')) return;
+        if (e.key === 'Escape') lb.classList.remove('open');
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); lbStep(-1); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); lbStep(1); }
+    });
+    document.getElementById('detail').addEventListener('click', function (e) {
+        var w = e.target.closest ? e.target.closest('.d-photoWrap') : null;
+        if (!w || !curRec) return;
+        var img = w.querySelector('img');
+        if (!img || !img.naturalWidth) return;
+        updateLightbox();
+        lb.classList.add('open');
+    });
+
+    // ---------- 7b. 底片條（隨篩選連動，點擊定位地圖） ----------
+    function buildFilmstrip() {
+        var el = document.getElementById('filmstrip');
+        var html = '';
+        filteredList.forEach(function (rec) {
+            var fn = fileName(rec);
+            if (!fn) return;
+            html += '<img loading="lazy" src="images/' + encodeURIComponent(fn) + '" data-pid="'
+                + esc(rec['照片總編號']) + '" title="' + esc(rec['照片總編號']) + '" alt="">';
+        });
+        // 空狀態：沒有任何符合的記錄時給一句話，而不是無聲消失
+        if (!html) html = '<span class="fs-empty">沒有符合的記錄 — 調整篩選或清除搜尋再試</span>';
+        el.innerHTML = html;
+        syncFilmstripActive();
+    }
+    function syncFilmstripActive() {
+        var el = document.getElementById('filmstrip');
+        var imgs = el.querySelectorAll('img');
+        for (var i = 0; i < imgs.length; i++) {
+            var on = curRec && imgs[i].getAttribute('data-pid') === curRec['照片總編號'];
+            imgs[i].classList.toggle('active', !!on);
+            if (on) imgs[i].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+    }
+    function jumpToRecord(pid) {
+        selectRecord(pid, true);
+        var m = markersById[pid];
+        if (m) {
+            if (map.getZoom() < 15) map.setView(m.getLatLng(), 15);
+            else map.panTo(m.getLatLng());
+        }
+    }
+    document.getElementById('filmstrip').addEventListener('click', function (e) {
+        var img = e.target.closest ? e.target.closest('img') : null;
+        if (img && img.getAttribute('data-pid')) jumpToRecord(img.getAttribute('data-pid'));
+    });
+
+    // ---------- 7c. 搜尋框 ----------
+    document.getElementById('search').addEventListener('input', function () {
+        // 關鍵字也過簡→繁轉換：貼上原始 CSV 的簡體詞（如「马湾涌」）同樣搜得到
+        searchTerm = toTraditional(this.value.trim().toLowerCase());
+        refreshFilter();
+    });
+
+    // ---------- 8. 啟動 ----------
+    buildMap();
+    // 供除錯／自動化測試存取
+    window.map = map; window.cluster = cluster;
+
+    /* ---------- 8b. 鼠標遊動（map drift） ----------
+       滑鼠在地圖上偏離中心時，地圖緩緩向該方向滑動（探索「跟著滑鼠遊」的感覺）；
+       中央 16% 死區內不動、每幀最大 5.5px、速度 lerp 平滑；
+       按住拖拽或縮放動畫時暫停，滑出地圖自然減速歸停。 */
+    (function () {
+        var mouse = null, vx = 0, vy = 0, paused = false, raf = null;
+        var el = document.getElementById('map');
+        el.addEventListener('mousemove', function (e) {
+            var r = el.getBoundingClientRect();
+            mouse = { x: (e.clientX - r.left) / r.width - .5,
+                      y: (e.clientY - r.top) / r.height - .5 };
+            kick();
+        });
+        el.addEventListener('mouseleave', function () { mouse = null; kick(); });
+        el.addEventListener('mousedown', function () { paused = true; }, true);
+        document.addEventListener('mouseup', function () { paused = false; kick(); });
+        map.on('zoomstart', function () { paused = true; });
+        map.on('zoomend', function () { paused = false; kick(); });
+        function kick() { if (raf === null) raf = requestAnimationFrame(step); }
+        function step() {
+            raf = null;
+            var tx = 0, ty = 0;
+            if (mouse && !paused) {
+                var dead = .16, span = .34;   // 死區 16%、死區到邊緣線性加速
+                var ax = Math.abs(mouse.x) - dead, ay = Math.abs(mouse.y) - dead;
+                if (ax > 0) tx = (mouse.x > 0 ? 1 : -1) * Math.min(ax / span, 1);
+                if (ay > 0) ty = (mouse.y > 0 ? 1 : -1) * Math.min(ay / span, 1);
+                tx *= 5.5; ty *= 5.5;
+            }
+            vx += (tx - vx) * .07;
+            vy += (ty - vy) * .07;
+            if (Math.abs(vx) > .06 || Math.abs(vy) > .06) {
+                map.panBy([vx, vy], { animate: false, noMoveStart: true });
+                raf = requestAnimationFrame(step);
+            }
+        }
+    })();
+
+    /* 原始 CSV 以簡體字記錄（马湾涌、渔民村、张振江…）。
+       原始資料檔不更動——載入後在此統一轉為繁體顯示（含搜尋與篩選標籤），
+       23 字映射即資料中全部會出現的簡體字；對已是繁體的文字為無作用。 */
+    var S2T = { 东: '東', 内: '內', 划: '劃', 动: '動', 单: '單', 号: '號', 头: '頭',
+        张: '張', 户: '戶', 机: '機', 桥: '橋', 楼: '樓', 渔: '漁', 游: '遊', 湾: '灣',
+        码: '碼', 简: '簡', 边: '邊', 还: '還', 门: '門', 颜: '顏', 马: '馬', 鱼: '魚' };
+    function toTraditional(text) {
+        return text.replace(/[东内划动单号头张户机桥楼渔游湾码简边还门颜马鱼]/g,
+            function (c) { return S2T[c]; });
+    }
+
+    function applyCSV(text) {
+        DATA = parseCSV(toTraditional(text));
+        if (!DATA.length) throw new Error('CSV 內容為空');
+        document.getElementById('total').textContent = DATA.length;
+        buildMarkers();
+        buildFilters();
+        refreshFilter();
+        window.markersById = markersById;
+        // URL #B09P02 → 載入後直接定位該照片
+        var h = location.hash.slice(1);
+        if (h && markersById[h]) jumpToRecord(h);
+    }
+    (function loadCSV(idx) {
+        var embedEl = document.getElementById('csv-embed');
+        if (idx >= CSV_CANDIDATES.length) {
+            if (embedEl && embedEl.textContent.trim()) {
+                applyCSV(embedEl.textContent);
+                document.getElementById('count').title = 'file:// 模式：使用頁面內嵌的 CSV 快照';
+                return;
+            }
+            document.getElementById('filter-root').innerHTML =
+                '<div class="err">無法載入 individualphoto(B09).csv。<br>請以 module1/ 為伺服器根目錄開啟本頁（例如 python3 -m http.server 於 module1/ 執行）。</div>';
+            return;
+        }
+        fetch(CSV_CANDIDATES[idx]).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.text();
+        }).then(function (text) {
+            applyCSV(text);
+        }).catch(function () { loadCSV(idx + 1); });
+    })(0);
+})();
+</script>
+
+<!-- ================= 工作台場景與檔案簿（合併自 workbench.html） ================= -->
+<script>
+(function () {
+    'use strict';
+    var wb = document.getElementById('workbench');
+    var bookWrap = document.getElementById('bookWrap');
+    var toast = document.getElementById('toast');
+    var fade = document.getElementById('wbFade');
+    var toastTimer = null;
+    function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 1800);
+    }
+    /* 1992 Archive → 同頁黑幕淡出切換到地圖 */
+    function enterMap() {
+        fade.classList.add('on');
+        setTimeout(function () {
+            wb.classList.add('hidden');
+            fade.classList.remove('on');
+            if (window.map) window.map.invalidateSize();
+        }, 700);
+    }
+    function showWorkbench() {
+        bookWrap.classList.remove('open');
+        document.getElementById('hint').style.display = '';
+        wb.classList.remove('hidden');
+    }
+    document.getElementById('deskHotspot').addEventListener('click', function () {
+        document.getElementById('hint').style.display = 'none';
+        bookWrap.classList.add('open');
+        renderZ();
+    });
+    document.getElementById('bookClose').addEventListener('click', function () {
+        bookWrap.classList.remove('open');
+        document.getElementById('hint').style.display = '';
+    });
+    /* 地圖左上 ⌂ → 返回工作台場景 */
+    document.getElementById('backHome').addEventListener('click', function (e) {
+        e.preventDefault();
+        showWorkbench();
+    });
+
+    /* ---------- 檔案簿（翻頁） ---------- */
+    function folder(o) {
+        if (o.open) {
+            return '<div class="folder open-able">'
+                + '<span class="ftab">' + o.tab + '</span><div class="fbody">'
+                + '<div class="flabel">' + o.label + '<small>' + o.small + '</small></div>'
+                + '<span class="stamp">▶ 點擊開啟</span></div></div>';
+        }
+        return '<div class="folder locked" data-lock="1">'
+            + '<span class="ftab">' + o.tab + '</span><div class="fbody">'
+            + '<div class="flabel">' + o.label + '<small>' + o.small + '</small></div>'
+            + '<span class="stamp">🔒 未開放</span></div></div>';
+    }
+    var sheets = [
+        { // 封面 | 內頁左：說明
+            front: '<div class="face cover"><div class="emboss">田野檔案室</div>'
+                + '<div class="sub">FIELD ARCHIVE · ANTH3323</div>'
+                + '<div class="open-tip">— 點擊右頁翻開 —</div></div>',
+            back: '<div class="face back paper"><h3>檔案室說明</h3>'
+                + '<p>本工作台收藏 1992 年於大嶼山馬灣涌進行的田野照片檔案。</p>'
+                + '<p style="margin-top:8px">牆上的家戶譜系與軟木板照片，來自當年的田野記錄。</p>'
+                + '<p class="note">目前僅「1992 Archive」檔案夾開放閱覽，其餘檔案夾尚未整理完成。</p>'
+                + '<div class="gutter"></div></div>'
+        },
+        { // 右頁：檔案夾一
+            front: '<div class="face paper"><h3>檔案夾 · 一</h3><div class="folders">'
+                + folder({ tab: '1992 Archive', open: true,
+                    label: 'B09 照片檔案', small: '馬灣涌 · 1992 · 31 張照片地圖' })
+                + folder({ tab: 'Field Notes', label: '田野筆記', small: '1991–1992 · 未整理' })
+                + folder({ tab: 'Family Tree', label: '家戶譜系圖', small: '馬灣涌各戶 · 建檔中' })
+                + '</div><div class="gutter"></div></div>',
+            back: '<div class="face back paper"><h3>待歸檔</h3>'
+                + '<p>底片目錄、訪談謄本與地圖底稿仍在整理。</p>'
+                + '<p class="note">— 等待未來的田野 —</p><div class="gutter"></div></div>'
+        },
+        { // 右頁：檔案夾二
+            front: '<div class="face paper"><h3>檔案夾 · 二</h3><div class="folders">'
+                + folder({ tab: 'Oral History', label: '口述歷史', small: '漁戶訪談 · 未開放' })
+                + folder({ tab: 'Clippings', label: '報章剪輯', small: '1990s 東涌發展 · 未開放' })
+                + folder({ tab: 'Negatives', label: '底片目錄', small: '9- / 11- / 12- / 16- 系列' })
+                + '</div><div class="gutter"></div></div>',
+            back: '<div class="face back paper" style="display:flex;align-items:center;justify-content:center">'
+                + '<p style="text-align:center;font-family:\'Songti TC\',serif;font-size:15px;letter-spacing:.3em;color:#8a744c">'
+                + '— 未 開 放 的 檔 案 —</p><div class="gutter"></div></div>'
+        }
+    ];
+    var book = document.getElementById('book');
+    var flipped = 0;
+    sheets.forEach(function (s, i) {
+        var d = document.createElement('div');
+        d.className = 'sheet'; d.dataset.idx = i;
+        d.innerHTML = s.front + s.back;
+        book.appendChild(d);
+    });
+    var sheetEls = [].slice.call(book.querySelectorAll('.sheet'));
+    var pgInd = document.getElementById('pgInd');
+    var NAMES = ['封面', '檔案夾 · 一', '檔案夾 · 二', '封底'];
+    function renderZ() {
+        sheetEls.forEach(function (el, i) {
+            var f = i < flipped;
+            el.classList.toggle('flipped', f);
+            el.style.zIndex = f ? i + 1 : sheetEls.length - i;
+            /* 兩面可見度：不依賴 backface-visibility（部分引擎不支援），
+               翻頁時 crossfade，與翻轉同步 */
+            var front = el.querySelector('.face:not(.back)');
+            var back = el.querySelector('.face.back');
+            front.style.opacity = f ? 0 : 1;
+            front.style.visibility = f ? 'hidden' : 'visible';
+            back.style.opacity = f ? 1 : 0;
+            back.style.visibility = f ? 'visible' : 'hidden';
+        });
+        pgInd.textContent = NAMES[Math.min(flipped, NAMES.length - 1)];
+        document.getElementById('pgPrev').disabled = flipped === 0;
+        document.getElementById('pgNext').disabled = flipped === sheetEls.length;
+    }
+    document.getElementById('pgNext').addEventListener('click', function () {
+        if (flipped < sheetEls.length) { flipped++; renderZ(); }
+    });
+    document.getElementById('pgPrev').addEventListener('click', function () {
+        if (flipped > 0) { flipped--; renderZ(); }
+    });
+    renderZ();
+
+    /* 檔案夾點擊：只有 1992 Archive 可進入 */
+    book.addEventListener('click', function (e) {
+        var f = e.target.closest('.folder');
+        if (!f) return;
+        if (f.classList.contains('open-able')) {
+            enterMap();
+        } else {
+            f.classList.remove('shake');
+            void f.offsetWidth;
+            f.classList.add('shake');
+            showToast('此檔案夾尚未開放 — 僅 1992 Archive 可閱覽');
+        }
+    });
+
+    /* 書本自適應縮放 */
+    function fit() {
+        var s = Math.min(1, (window.innerWidth - 60) / 680, (window.innerHeight - 140) / 460);
+        document.documentElement.style.setProperty('--bs', Math.max(.4, s));
+    }
+    window.addEventListener('resize', fit);
+    fit();
+
+    /* URL 帶 #B09Pxx 分享連結時，直接進入地圖（略過工作台） */
+    if (/^B09P/.test(location.hash.slice(1))) wb.classList.add('hidden');
+
+    /* ---------- 鼠標驅動 3D：檔案簿跟隨滑鼠傾斜 ----------
+       場景板塊的 hover 放大由 CSS :hover 完成（見上方 .fx 規則）。 */
+    var p = { bx: 0, by: 0 };   // 書本目前角度（deg）
+    var tg = { bx: 0, by: 0 };  // 目標角度
+    var rafId = null;
+    function tick() {
+        var k = .085, done = true, key;
+        for (key in tg) {
+            p[key] += (tg[key] - p[key]) * k;
+            if (Math.abs(tg[key] - p[key]) > .02) done = false;
+        }
+        wb.style.setProperty('--bry', p.bx.toFixed(3) + 'deg');
+        wb.style.setProperty('--brx', p.by.toFixed(3) + 'deg');
+        rafId = done ? null : requestAnimationFrame(tick);
+    }
+    function kick() { if (rafId === null) rafId = requestAnimationFrame(tick); }
+    wb.addEventListener('mousemove', function (e) {
+        var nx = e.clientX / window.innerWidth - .5;    // -0.5 ~ 0.5
+        var ny = e.clientY / window.innerHeight - .5;
+        tg.bx = nx * 10;     // 書本左右轉 ≤10°
+        tg.by = -ny * 7;     // 書本上下轉 ≤7°
+        kick();
+    });
+    wb.addEventListener('mouseleave', function () {
+        tg.bx = tg.by = 0;
+        kick();
+    });
+})();
+</script>
+</body>
+</html>
