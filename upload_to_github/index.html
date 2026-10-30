@@ -950,7 +950,13 @@ P31,B09,B09P31,1992,unknown,東升樓內,unknown,王羽彤,28-Aug-26,interior of
         markersById = {};
         var pts = [];
         DATA.forEach(function (rec) {
-            var la = parseFloat(rec['shoot_lat']), lo = parseFloat(rec['shoot_lng']);
+            /* 定位用「被攝對象」座標（subject_lat/lng），與原 qgis2web 圖層的
+               geometry 一致；拍攝點（shoot_lat/lng）只是攝影者站立位置，
+               31 張只有 5 個，會讓照片全擠在船上。被攝點缺漏時才退回拍攝點。 */
+            var la = parseFloat(rec['subject_lat']), lo = parseFloat(rec['subject_lng']);
+            if (isNaN(la) || isNaN(lo)) {
+                la = parseFloat(rec['shoot_lat']); lo = parseFloat(rec['shoot_lng']);
+            }
             if (isNaN(la) || isNaN(lo)) return;
             // 立體小徽章（divIcon）：與聚類同一套 3D 語彙，放散點專屬高層
             var m = L.marker([la, lo], {
